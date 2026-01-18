@@ -18,6 +18,6 @@ ANTHROPIC_SPEC = ProviderSpec(
 )
 GEMINI_SPEC = ProviderSpec(
     name="gemini",
-    model="gemini:gemini-3-pro-preview",
-    required_env="GEMINI_API_KEY",
+    model="google-gla:gemini-3-pro-preview",
+    required_env="GOOGLE_API_KEY",
 )
