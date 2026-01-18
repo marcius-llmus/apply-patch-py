@@ -1,4 +1,5 @@
 import os
+import difflib
 from pathlib import Path
 import shutil
 
@@ -29,6 +30,14 @@ HEAVY_PATCH_PROMPT = '''\
 You must produce a single patch that updates exactly one file:
 
 tests/integration/fixture/dirty_script.py
+
+You are also given the EXACT current contents of the file below.
+Do not invent or paraphrase any existing lines.
+When writing the patch, the removed (-) lines MUST match the file content exactly.
+
+BEGIN_FILE_CONTENT
+___FILE_CONTENT___
+END_FILE_CONTENT
 
 Make ALL of the following edits in ONE patch. The patch must be minimal and precise, and the resulting file must still import.
 
@@ -99,15 +108,15 @@ Replace the entire triple-quoted LOREM = """ ... """ block with this single line
 LOREM = "LOREM_REMOVED_FOR_TESTING"
 
 ### E) Duplication and shadowing section (repeated-content hazard)
-1) Rename the shadowing class:
+1) Rename the class definition line exactly from:
 class process:  # noqa: N801 intentionally shadowing
 to:
 class ProcessCallable:  # noqa: N801 intentionally shadowing
 
-2) Update its __call__ to return:
+2) Update its __call__ method to return:
 return f"ProcessCallable({self.x})"
 
-3) Do not rename the two def process(...) functions above it.
+(Do not rename the two "def process" functions above it.)
 
 ### F) Insert a large new block (>20 lines) in “more classes for anchors”
 Insert this class immediately before class ReportBuilder:
@@ -187,12 +196,21 @@ Return only the patch in the required patch format.
 
 def _assert_contains_all(haystack: str, needles: list[str]) -> None:
     missing = [n for n in needles if n not in haystack]
-    assert not missing, f"Missing expected substrings: {missing!r}"
+    assert not missing, "Missing expected substrings:\n" + "\n".join(f"- {m}" for m in missing)
 
 
 def _assert_not_contains_any(haystack: str, needles: list[str]) -> None:
     present = [n for n in needles if n in haystack]
-    assert not present, f"Unexpected substrings present: {present!r}"
+    assert not present, "Unexpected substrings present:\n" + "\n".join(f"- {p}" for p in present)
+
+
+def _assert_contains_ordered(haystack: str, needles: list[str]) -> None:
+    last = -1
+    for n in needles:
+        idx = haystack.find(n)
+        assert idx != -1, f"Expected substring not found: {n!r}"
+        assert idx > last, f"Expected substring order violated for: {n!r}"
+        last = idx
 
 
 async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int: # noqa
@@ -210,7 +228,17 @@ async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int: # noqa
     print(patch)
     print("\n===== END PATCH =====\n")
 
-    affected = await apply_patch_api(patch, workdir=ctx.deps)
+    try:
+        affected = await apply_patch_api(patch, workdir=ctx.deps)
+    except RuntimeError as e:
+        before_path = ctx.deps / "tests/integration/fixture/dirty_script.py"
+        if before_path.exists():
+            current = before_path.read_text(encoding="utf-8")
+            print("\n===== CURRENT FILE CONTENT (after failed apply) =====\n")
+            print(current)
+            print("\n===== END CURRENT FILE CONTENT =====\n")
+        raise
+
     return 0 if affected.success else 1
 
 
@@ -223,7 +251,9 @@ APPLY_PATCH_TOOL = Tool(
 
 
 def _heavy_patch_test_user_prompt() -> str:
-    return HEAVY_PATCH_PROMPT
+    fixture_path = Path("tests/integration/fixture/dirty_script.py")
+    file_content = fixture_path.read_text(encoding="utf-8")
+    return HEAVY_PATCH_PROMPT.replace("___FILE_CONTENT___", str(file_content))
 
 
 def _heavy_patch_test_system_prompt() -> str:
@@ -370,4 +400,20 @@ def test_llm_heavy_patch_dirty_file(tmp_path, model):
     assert result.output.exit_code == 0
 
     after = dirty_path.read_text(encoding="utf-8")
-    _assert_dirty_fixture_after(after)
+    try:
+        _assert_dirty_fixture_after(after)
+    except AssertionError:
+        # Include a compact diff to help diagnose which edit didn't apply.
+        diff = "\n".join(
+            difflib.unified_diff(
+                before.splitlines(),
+                after.splitlines(),
+                fromfile="before",
+                tofile="after",
+                lineterm="",
+                n=2,
+            )
+        )
+        raise AssertionError(
+            "Post-patch assertions failed. Diff (before -> after):\n" + diff
+        )
