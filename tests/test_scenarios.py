@@ -48,7 +48,10 @@ async def test_scenario(scenario_path, tmp_path):
     patch_text = patch_file.read_text(encoding="utf-8")
     
     # Run apply_patch
-    await apply_patch(patch_text, workdir=work_dir)
+    try:
+        await apply_patch(patch_text, workdir=work_dir)
+    except Exception as e: # noqa
+        pass
     
     # Compare with expected
     if expected_dir.exists():

@@ -17,23 +17,32 @@ async def run_apply_patch(patch_text: str) -> int:
             print(f"D {path}")
         return 0
     except Exception as e:
-        print(str(e), file=sys.stderr)
+        print(f"{e}", file=sys.stderr)
+        return 1
+    except BaseException as e:
+        # Catch-all for non-Exception errors (excluding SystemExit which is handled by caller/Python)
+        if isinstance(e, SystemExit):
+            raise
+        print(f"{e}", file=sys.stderr)
         return 1
 
 
 def main():
     parser = argparse.ArgumentParser(description="Apply a patch to files.")
-    parser.add_argument("patch_file", nargs="?", help="Path to the patch file. If omitted, reads from stdin.")
+    parser.add_argument("patch", nargs="?", help="The patch content. If omitted, reads from stdin.")
     
     args = parser.parse_args()
     
-    if args.patch_file:
-        with open(args.patch_file, "r", encoding="utf-8") as f:
-            patch_text = f.read()
+    if args.patch:
+        patch_text = args.patch
     else:
         if sys.stdin.isatty():
             parser.print_help()
             sys.exit(2)
         patch_text = sys.stdin.read()
-
-    sys.exit(asyncio.run(run_apply_patch(patch_text)))
+    
+    try:
+        sys.exit(asyncio.run(run_apply_patch(patch_text)))
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        sys.exit(1)
