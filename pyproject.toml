@@ -13,6 +13,7 @@ apply-patch-py = "apply_patch_py:main"
 
 [dependency-groups]
 dev = [
+    "pydantic-ai>=1.44.0",
     "pytest>=7.4.3,<8.0.0",
     "pytest-asyncio>=0.23.8",
 ]
@@ -29,3 +30,6 @@ packages = ["src/apply_patch_py"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = [
+    "integration: integration test that requires external LLM provider configuration",
+]
