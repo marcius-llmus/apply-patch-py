@@ -86,13 +86,13 @@ class PatchApplier:
 
     @classmethod
     def _apply_chunks(cls, original_lines: List[str], chunks: List[UpdateFileChunk], path: Path) -> List[str]:
-        replacements: List[Tuple[int, int, List[str]]] = []
+        current_lines = list(original_lines)
         line_index = 0
 
         for chunk in chunks:
             if chunk.change_context:
                 found_idx = ContentSearcher.find_sequence(
-                    original_lines,
+                    current_lines,
                     [chunk.change_context],
                     line_index,
                     False,
@@ -102,46 +102,50 @@ class PatchApplier:
                 line_index = found_idx + 1
 
             if not chunk.old_lines:
-                insertion_idx = len(original_lines)
-                replacements.append((insertion_idx, 0, list(chunk.new_lines)))
-                line_index = insertion_idx
+                insertion_idx = len(current_lines)
+                if current_lines and current_lines[-1] == "":
+                    insertion_idx -= 1
+                current_lines[insertion_idx:insertion_idx] = chunk.new_lines
+                line_index = insertion_idx + len(chunk.new_lines)
                 continue
 
+            pattern: List[str] = list(chunk.old_lines)
+            new_block: List[str] = list(chunk.new_lines)
+
             found_idx = ContentSearcher.find_sequence(
-                original_lines,
-                chunk.old_lines,
+                current_lines,
+                pattern,
                 line_index,
                 chunk.is_end_of_file,
             )
 
-            pattern = chunk.old_lines
-            new_block = list(chunk.new_lines)
-            match_len = len(pattern)
-
             if found_idx is None and pattern and pattern[-1] == "":
-                sub_pattern = pattern[:-1]
+                pattern = pattern[:-1]
+                if new_block and new_block[-1] == "":
+                    new_block = new_block[:-1]
+
                 found_idx = ContentSearcher.find_sequence(
-                    original_lines,
-                    sub_pattern,
+                    current_lines,
+                    pattern,
                     line_index,
                     chunk.is_end_of_file,
                 )
-                if found_idx is not None:
-                    pattern = sub_pattern
-                    match_len = len(pattern)
-                    if new_block and new_block[-1] == "":
-                        new_block = new_block[:-1]
+
+            if found_idx is None and line_index > 0:
+                found_idx = ContentSearcher.find_sequence(
+                    current_lines,
+                    pattern,
+                    0,
+                    chunk.is_end_of_file,
+                )
 
             if found_idx is None:
                 raise RuntimeError(
                     f"Failed to find expected lines in {path}:\n" + "\n".join(chunk.old_lines)
                 )
 
-            replacements.append((found_idx, match_len, new_block))
-            line_index = found_idx + match_len
+            match_len = len(pattern)
+            current_lines[found_idx : found_idx + match_len] = new_block
+            line_index = found_idx + len(new_block)
 
-        replacements.sort(key=lambda x: x[0], reverse=True)
-        result_lines = list(original_lines)
-        for start, length, new_block in replacements:
-            result_lines[start : start + length] = new_block
-        return result_lines
+        return current_lines
