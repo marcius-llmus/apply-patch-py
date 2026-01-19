@@ -2,6 +2,7 @@ import os
 import aiofiles
 from pathlib import Path
 from typing import List
+
 from .models import (
     Hunk,
     AddFile,
@@ -15,6 +16,17 @@ from .search import ContentSearcher
 
 
 class PatchApplier:
+    @staticmethod
+    def _resolve_in_workdir(workdir: Path, rel_path: Path) -> Path:
+        if rel_path.is_absolute():
+            raise RuntimeError(f"Path must be within the workspace: {rel_path}")
+
+        root = workdir.resolve()
+        target = (root / rel_path).resolve()
+        if root != target and root not in target.parents:
+            raise RuntimeError(f"Path must be within the workspace: {rel_path}")
+        return target
+
     @classmethod
     async def apply(cls, patch_text: str, workdir: Path = Path(".")) -> AffectedPaths:
         try:
@@ -34,11 +46,11 @@ class PatchApplier:
 
     @classmethod
     async def _apply_hunk(cls, hunk: Hunk, workdir: Path, affected: AffectedPaths):
-        workdir = workdir.resolve()
-        path = workdir / hunk.path
+        root = workdir.resolve()
+        path = cls._resolve_in_workdir(root, hunk.path)
 
         if isinstance(hunk, AddFile):
-            if path.parent != workdir:
+            if path.parent != root:
                 path.parent.mkdir(parents=True, exist_ok=True)
 
             async with aiofiles.open(path, "w", encoding="utf-8") as f:
@@ -73,8 +85,8 @@ class PatchApplier:
             new_content = "\n".join(new_lines)
 
             if hunk.move_to:
-                dest = workdir / hunk.move_to
-                if dest.parent != workdir:
+                dest = cls._resolve_in_workdir(root, hunk.move_to)
+                if dest.parent != root:
                     dest.parent.mkdir(parents=True, exist_ok=True)
 
                 async with aiofiles.open(dest, "w", encoding="utf-8") as f:

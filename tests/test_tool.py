@@ -248,3 +248,100 @@ def test_apply_patch_cli_failure_after_partial_success_leaves_changes(tmp_path):
 
     # Check that the first part of the patch was applied
     assert new_file.read_text() == "hello\n"
+
+
+def test_apply_patch_rejects_add_outside_workspace(tmp_path):
+    outside = tmp_path.parent / "outside_add.txt"
+    if outside.exists():
+        outside.unlink()
+
+    patch = """*** Begin Patch
+*** Add File: ../outside_add.txt
+++nope
+*** End Patch"""
+
+    res = run_cli([patch], cwd=tmp_path)
+    assert res.returncode != 0
+    assert res.stderr == "Path must be within the workspace: ../outside_add.txt\n"
+    assert not outside.exists()
+
+
+def test_apply_patch_rejects_update_move_outside_workspace(tmp_path):
+    outside = tmp_path.parent / "outside_move.txt"
+    if outside.exists():
+        outside.unlink()
+
+    (tmp_path / "in.txt").write_text("hello\n")
+
+    patch = """*** Begin Patch
+*** Update File: in.txt
+*** Move to: ../outside_move.txt
+@@
+-hello
++world
+*** End Patch"""
+
+    res = run_cli([patch], cwd=tmp_path)
+    assert res.returncode != 0
+    assert res.stderr == "Path must be within the workspace: ../outside_move.txt\n"
+    assert not outside.exists()
+    assert (tmp_path / "in.txt").read_text() == "hello\n"
+
+
+def test_apply_patch_rejects_delete_outside_workspace(tmp_path):
+    outside = tmp_path.parent / "outside_delete.txt"
+    outside.write_text("should not be deletable\n")
+
+    patch = """*** Begin Patch
+*** Delete File: ../outside_delete.txt
+*** End Patch"""
+
+    res = run_cli([patch], cwd=tmp_path)
+    assert res.returncode != 0
+    assert res.stderr == "Path must be within the workspace: ../outside_delete.txt\n"
+    assert outside.exists()
+
+
+def test_apply_patch_rejects_update_outside_workspace(tmp_path):
+    outside = tmp_path.parent / "outside_update.txt"
+    outside.write_text("hello\n")
+
+    patch = """*** Begin Patch
+*** Update File: ../outside_update.txt
+@@
+-hello
++world
+*** End Patch"""
+
+    res = run_cli([patch], cwd=tmp_path)
+    assert res.returncode != 0
+    assert res.stderr == "Path must be within the workspace: ../outside_update.txt\n"
+    assert outside.read_text() == "hello\n"
+
+
+def test_apply_patch_rejects_absolute_paths(tmp_path):
+    patch = """*** Begin Patch
+*** Add File: /tmp/evil.txt
+++nope
+*** End Patch"""
+
+    res = run_cli([patch], cwd=tmp_path)
+    assert res.returncode != 0
+    assert res.stderr.startswith("Path must be within the workspace: ")
+
+
+def test_apply_patch_rejects_absolute_move_to(tmp_path):
+    (tmp_path / "in.txt").write_text("hello\n")
+
+    patch = """*** Begin Patch
+*** Update File: in.txt
+*** Move to: /tmp/evil_move.txt
+@@
+-hello
++world
+*** End Patch"""
+
+    res = run_cli([patch], cwd=tmp_path)
+    assert res.returncode != 0
+    assert res.stderr == "Path must be within the workspace: /tmp/evil_move.txt\n"
+    assert (tmp_path / "in.txt").read_text() == "hello\n"
