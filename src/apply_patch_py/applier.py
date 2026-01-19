@@ -1,7 +1,7 @@
 import os
 import aiofiles
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 from .models import Hunk, AddFile, DeleteFile, UpdateFile, UpdateFileChunk, AffectedPaths
 from .parser import PatchParser
 from .search import ContentSearcher
@@ -89,6 +89,9 @@ class PatchApplier:
         current_lines = list(original_lines)
         line_index = 0
 
+        if not chunks:
+            raise RuntimeError(f"Invalid patch: Update file hunk for path '{path}' is empty")
+
         for chunk in chunks:
             if chunk.change_context:
                 found_idx = ContentSearcher.find_sequence(
@@ -140,6 +143,14 @@ class PatchApplier:
                 )
 
             if found_idx is None:
+                found_idx = cls._fallback_find_lines_independently(
+                    current_lines=current_lines,
+                    pattern=pattern,
+                    start_idx=line_index,
+                    is_end_of_file=chunk.is_end_of_file,
+                )
+
+            if found_idx is None:
                 raise RuntimeError(
                     f"Failed to find expected lines in {path}:\n" + "\n".join(chunk.old_lines)
                 )
@@ -149,3 +160,62 @@ class PatchApplier:
             line_index = found_idx + len(new_block)
 
         return current_lines
+
+    @classmethod
+    def _fallback_find_lines_independently(
+        cls,
+        *,
+        current_lines: List[str],
+        pattern: List[str],
+        start_idx: int,
+        is_end_of_file: bool,
+    ) -> int | None:
+        """Fallback matcher for imperfect LLM hunks.
+
+        Strict matching is attempted first. If it fails, we try to locate the edit
+        position using a couple of distinctive "anchor" lines from the old block.
+
+        To reduce the chance of patching the wrong location, we only accept anchors
+        that are unique in the file.
+        """
+
+        candidates: List[str] = [p for p in pattern if p.strip()]
+        if not candidates:
+            return None
+
+        anchors = candidates[:2]
+        if not anchors:
+            return None
+
+        anchor_matches: List[int] = []
+        for anchor in anchors:
+            if not cls._is_unique_line(current_lines, anchor):
+                return None
+
+            idx = ContentSearcher.find_sequence(current_lines, [anchor], start_idx, is_end_of_file)
+            if idx is None and start_idx > 0:
+                idx = ContentSearcher.find_sequence(current_lines, [anchor], 0, is_end_of_file)
+            if idx is None:
+                return None
+            anchor_matches.append(idx)
+
+        if len(anchor_matches) >= 2 and anchor_matches[1] < anchor_matches[0]:
+            return None
+
+        return min(anchor_matches)
+
+    @staticmethod
+    def _is_unique_line(lines: List[str], line: str) -> bool:
+        """Return True if 'line' occurs exactly once in 'lines'.
+
+        We use strict equality; if normalization is needed, it should be applied at
+        the search layer.
+        """
+
+        count = 0
+        for candidate in lines:
+            if candidate == line:
+                count += 1
+                if count > 1:
+                    return False
+        return count == 1

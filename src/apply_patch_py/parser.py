@@ -1,5 +1,6 @@
 from typing import List, Tuple
 from pathlib import Path
+import re
 from .models import Patch, Hunk, AddFile, DeleteFile, UpdateFile, UpdateFileChunk
 
 
@@ -27,6 +28,13 @@ class PatchParser:
 
         if first != cls.BEGIN_PATCH:
             raise ValueError(f"The first line of the patch must be '{cls.BEGIN_PATCH}'")
+
+        if last != cls.END_PATCH:
+            lines = cls._coerce_llm_patch(lines)
+            if not lines:
+                raise ValueError("Empty patch")
+            last = lines[-1].strip()
+
         if last != cls.END_PATCH:
             raise ValueError(f"The last line of the patch must be '{cls.END_PATCH}'")
 
@@ -40,6 +48,41 @@ class PatchParser:
             idx += consumed
 
         return Patch(hunks=hunks)
+
+    @classmethod
+    def _coerce_llm_patch(cls, lines: List[str]) -> List[str]:
+        """Attempt to recover from common LLM formatting mistakes.
+
+        In some model outputs, "*** End Patch" may appear as an added line in the
+        final hunk (prefixed with '+') instead of as the required final line.
+        This function normalizes that case by:
+        - stripping trailing whitespace-only lines
+        - converting a trailing '+*** End Patch' (and trailing '+') into
+          a proper final '*** End Patch'
+
+        It intentionally stays conservative to avoid mis-parsing legitimate
+        file content additions.
+        """
+
+        if not lines:
+            return lines
+
+        while lines and not lines[-1].strip():
+            lines.pop()
+
+        if not lines:
+            return lines
+
+        if lines[-1].strip() == f"+{cls.END_PATCH}":
+            lines[-1] = cls.END_PATCH
+            return lines
+
+        if len(lines) >= 2 and lines[-2].strip() == f"+{cls.END_PATCH}" and lines[-1].strip() == "+":
+            lines = lines[:-1]
+            lines[-1] = cls.END_PATCH
+            return lines
+
+        return lines
 
     @classmethod
     def _strip_heredoc(cls, lines: List[str]) -> List[str]:
@@ -140,7 +183,15 @@ class PatchParser:
         if first.strip() == cls.EMPTY_CHANGE_CONTEXT:
             start_idx = 1
         elif first.startswith(cls.CHANGE_CONTEXT):
-            change_context = first[len(cls.CHANGE_CONTEXT):].strip()
+            raw_context = first[len(cls.CHANGE_CONTEXT):].strip()
+            # Some LLMs (notably Gemini) emit unified-diff style range headers
+            # (e.g. "-21,6 +21,7 @@") instead of a literal context anchor.
+            # Our applier interprets change_context as a line to search for, so
+            # we treat these numeric headers as "no context".
+            if re.fullmatch(r"-\d+(?:,\d+)?\s+\+\d+(?:,\d+)?\s+@@", raw_context):
+                change_context = None
+            else:
+                change_context = raw_context
             start_idx = 1
         else:
             if not allow_missing_context:
