@@ -84,10 +84,15 @@ For example:
 Request> Create a new file named "notes/hello.txt" with the content:
 hello from the patch tool
 ```
-Or
+or
 ```
 Request> Remove content "xyz" from existing_file.txt 123
 ```
+or
+```
+Request> Edit file xyz, remove the middle block.
+```
+
 
 ---
 

@@ -1,7 +1,7 @@
 import asyncio
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, Optional
 
 from pydantic_ai import Agent, RunContext, Tool
 
@@ -102,6 +102,7 @@ APPLY_PATCH_TOOL = Tool(
 
 async def run_agent_loop() -> NoReturn:
     deps = Deps(workspace=EXAMPLE_ROOT)
+    message_history: Optional[list] = None
     system_prompt = (
         "You are a coding agent working in a local workspace. "
         "Use list_files and read_file to inspect. "
@@ -129,7 +130,8 @@ async def run_agent_loop() -> NoReturn:
         if not user_request:
             continue
 
-        result = await agent.run(user_request, deps=deps)
+        result = await agent.run(user_request, deps=deps, message_history=message_history)
+        message_history = result.all_messages()
         print(result.output)
 
 
