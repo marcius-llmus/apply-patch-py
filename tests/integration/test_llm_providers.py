@@ -1,5 +1,6 @@
 import os
 import difflib
+from dataclasses import dataclass
 from pathlib import Path
 import shutil
 
@@ -9,8 +10,8 @@ from pydantic_ai import Agent, RunContext, Tool
 
 from apply_patch_py import apply_patch as apply_patch_api
 from apply_patch_py.utils import (
-    get_patch_format_instructions,
     get_patch_format_tool_instructions,
+    get_patch_format_instructions,  # noqa: F401 (it is used on docstring)
 )
 
 from providers import ANTHROPIC_SPEC, GEMINI_SPEC, OPENAI_SPEC
@@ -20,13 +21,9 @@ class ApplyPatchResult(BaseModel):
     exit_code: int
 
 
-def _apply_patch_test_system_prompt() -> str:
-    return (
-        "You are given a tool to apply patches to a working directory. "
-        "Always generate a patch that follows these exact instructions:\n\n"
-        f"{get_patch_format_instructions()}\n\n"
-        "Call the tool exactly once."
-    )
+@dataclass(frozen=True)
+class Deps:
+    workdir: Path
 
 
 HEAVY_PATCH_PROMPT = '''\
@@ -220,7 +217,7 @@ def _assert_contains_ordered(haystack: str, needles: list[str]) -> None:
         last = idx
 
 
-async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int:  # noqa
+async def apply_patch_tool(ctx: RunContext[Deps], patch: str) -> int:  # noqa
     """Apply a patch to the current workspace.
 
     Args:
@@ -229,7 +226,7 @@ async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int:  # noqa
             {get_patch_format_instructions()}
     """
 
-    affected = await apply_patch_api(patch, workdir=ctx.deps)
+    affected = await apply_patch_api(patch, workdir=ctx.deps.workdir)
     return 0 if affected.success else 1
 
 
@@ -246,14 +243,6 @@ def _heavy_patch_test_user_prompt() -> str:
     fixture_path = Path("tests/integration/fixture/dirty_script.py")
     file_content = fixture_path.read_text(encoding="utf-8")
     return HEAVY_PATCH_PROMPT.replace("___FILE_CONTENT___", str(file_content))
-
-
-def _heavy_patch_test_system_prompt() -> str:
-    return (
-        _apply_patch_test_system_prompt()
-        + "\n\n"
-        + "You must edit exactly one file, and it must already exist in the workspace."
-    )
 
 
 def _prepare_dirty_fixture(tmp_path: Path) -> Path:
@@ -382,13 +371,13 @@ def test_llm_heavy_patch_dirty_file(tmp_path, model):
 
     agent = Agent(  # noqa
         model,
-        deps_type=Path,
+        deps_type=Deps,
         output_type=ApplyPatchResult,
         tools=[APPLY_PATCH_TOOL],
-        system_prompt=_heavy_patch_test_system_prompt(),
+        system_prompt="You are a coding agent",
     )
 
-    result = agent.run_sync(_heavy_patch_test_user_prompt(), deps=workdir)
+    result = agent.run_sync(_heavy_patch_test_user_prompt(), deps=Deps(workdir=workdir))
     assert result.output.exit_code == 0
 
     after = dirty_path.read_text(encoding="utf-8")

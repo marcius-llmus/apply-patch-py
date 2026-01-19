@@ -23,6 +23,9 @@ lint: init
 test: init
 	@$(PYTHON) pytest
 
+test-integration: init
+	@$(PYTHON) pytest -m integration
+
 # Preferred build (uv)
 build: init
 	@rm -rf $(DIST_DIR)
