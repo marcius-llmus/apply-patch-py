@@ -222,23 +222,7 @@ async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int: # noqa
             {get_patch_format_instructions()}
     """
 
-    # For debugging/repro: print the patch the model produced.
-    # This goes to captured stdout; run pytest with -s to see it live.
-    print("\n===== APPLY_PATCH TOOL RECEIVED PATCH =====\n")
-    print(patch)
-    print("\n===== END PATCH =====\n")
-
-    try:
-        affected = await apply_patch_api(patch, workdir=ctx.deps)
-    except RuntimeError as e:
-        before_path = ctx.deps / "tests/integration/fixture/dirty_script.py"
-        if before_path.exists():
-            current = before_path.read_text(encoding="utf-8")
-            print("\n===== CURRENT FILE CONTENT (after failed apply) =====\n")
-            print(current)
-            print("\n===== END CURRENT FILE CONTENT =====\n")
-        raise
-
+    affected = await apply_patch_api(patch, workdir=ctx.deps)
     return 0 if affected.success else 1
 
 
