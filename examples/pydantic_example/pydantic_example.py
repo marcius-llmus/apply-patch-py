@@ -105,7 +105,7 @@ async def run_agent_loop() -> NoReturn:
     system_prompt = (
         "You are a coding agent working in a local workspace. "
         "Use list_files and read_file to inspect. "
-        "When you are ready to make changes, call apply_patch exactly once with a single patch.\n\n"
+        "When you are ready to make changes, use apply_patch\n\n"
         "Patch format rules:\n"
         f"{get_patch_format_instructions()}\n"
     )
