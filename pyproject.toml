@@ -53,6 +53,9 @@ exclude = [
     "tests/integration/fixture/dirty_script.py",
 ]
 
+[tool.black]
+force-exclude = "tests/integration/fixture/dirty_script.py"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
