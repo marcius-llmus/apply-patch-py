@@ -1,12 +1,33 @@
 [project]
 name = "apply-patch-py"
 version = "0.1.0"
-description = "A python port of codex apply patch"
+description = "Apply Codex-style patch blocks (*** Begin Patch ... *** End Patch) to a working directory."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "aiofiles>=24.1.0",
 ]
+
+license = { file = "LICENSE" }
+authors = [{ name = "marcin" }]
+keywords = ["patch", "diff", "apply", "codex", "llm", "tooling"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Version Control",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/marcius-llmus/apply-patch-py"
+Repository = "https://github.com/marcius-llmus/apply-patch-py"
+Issues = "https://github.com/marcius-llmus/apply-patch-py/issues"
+Changelog = "https://github.com/marcius-llmus/apply-patch-py/releases"
 
 [project.scripts]
 apply-patch-py = "apply_patch_py:main"

@@ -1,4 +1,4 @@
-.PHONY: init install format lint test build publish publish-test clean
+.PHONY: init install format lint test build publish publish-test verify-testpypi clean
 
 PYTHON ?= uv run
 
@@ -33,11 +33,6 @@ build: init
 publish: build
 	@test -n "$$UV_PUBLISH_TOKEN" || { echo >&2 "Error: UV_PUBLISH_TOKEN is not set"; exit 1; }
 	@uv publish
-
-# Publish to TestPyPI (requires UV_PUBLISH_TOKEN)
-publish-test: build
-	@test -n "$$UV_PUBLISH_TOKEN" || { echo >&2 "Error: UV_PUBLISH_TOKEN is not set"; exit 1; }
-	@UV_PUBLISH_URL=https://test.pypi.org/legacy/ uv publish
 
 clean:
 	@rm -rf $(DIST_DIR) .pytest_cache .ruff_cache .mypy_cache
