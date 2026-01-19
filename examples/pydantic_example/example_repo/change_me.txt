@@ -1,0 +1,4 @@
+This is a demo file used by examples/pydantic.py.
+
+Try asking the agent to update this file.
+For example: "Replace the first line with: Hello from the patch tool".

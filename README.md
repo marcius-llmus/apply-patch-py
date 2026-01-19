@@ -62,71 +62,31 @@ uvx apply-patch-py "*** Begin Patch
 
 ### PydanticAI tool Example
 
-The patch-format instruction strings live in:
+You can try it from examples folder:
 
-- `apply_patch_py.utils.get_patch_format_instructions()`
-- `apply_patch_py.utils.get_patch_format_tool_instructions()`
+```bash
+# 1) Clone and run the example
+git clone https://github.com/marcius-llmus/apply-patch-py
+cd apply-patch-py
 
-```python
-from __future__ import annotations
+# Provide your LLM key (example: OpenAI)
+export OPENAI_API_KEY="sk-proj-..."
 
-from dataclasses import dataclass
-from pathlib import Path
+# Run the example with uv
+uv run examples/pydantic_example/pydantic_example.py
+```
 
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext, Tool
+Then you can start asking edits to files inside `example_repo` folder.
 
-from apply_patch_py import apply_patch as apply_patch_api
-from apply_patch_py.utils import (
-    get_patch_format_instructions,
-    get_patch_format_tool_instructions,
-)
+For example: 
 
-
-class ApplyPatchResult(BaseModel):
-    exit_code: int
-
-
-@dataclass(frozen=True)
-class Deps:
-    workdir: Path
-
-
-async def apply_patch_tool(ctx: RunContext[Deps], patch: str) -> int:
-    """Apply a patch to the current workspace.
-
-    Args:
-        patch: The patch text to apply.
-            Must follow these instructions exactly:
-            {get_patch_format_instructions()}
-    """
-    affected = await apply_patch_api(patch, workdir=ctx.deps.workdir)
-    return 0 if affected.success else 1
-
-
-APPLY_PATCH_TOOL = Tool(
-    apply_patch_tool,
-    takes_ctx=True,
-    docstring_format="google",
-    require_parameter_descriptions=True,
-    description=get_patch_format_tool_instructions(),
-)
-
-
-agent = Agent(
-    "openai:gpt-5.2",  # any supported provider model
-    deps_type=Deps,
-    output_type=ApplyPatchResult,
-    tools=[APPLY_PATCH_TOOL],
-    system_prompt="You are a coding agent",
-)
-
-result = agent.run_sync(
-    "Create a patch that adds hello.txt with the content 'hello'.",
-    deps=Deps(workdir=Path(".")),
-)
-
-assert result.output.exit_code == 0
+```
+Request> Create a new file named "notes/hello.txt" with the content:
+hello from the patch tool
+```
+Or
+```
+Request> Remove content "xyz" from existing_file.txt 123
 ```
 
 ---
@@ -136,7 +96,6 @@ assert result.output.exit_code == 0
 You can also call the library directly:
 
 ```python
-from pathlib import Path
 import asyncio
 
 from apply_patch_py import apply_patch
