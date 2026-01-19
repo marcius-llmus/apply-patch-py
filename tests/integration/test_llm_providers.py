@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext, Tool
 
 from apply_patch_py import apply_patch as apply_patch_api
-from apply_patch_py.utils import get_patch_format_instructions
+from apply_patch_py.utils import get_patch_format_instructions, get_patch_format_tool_instructions
 
 from providers import ANTHROPIC_SPEC, GEMINI_SPEC, OPENAI_SPEC
 
@@ -231,6 +231,7 @@ APPLY_PATCH_TOOL = Tool(
     takes_ctx=True,
     docstring_format="google",
     require_parameter_descriptions=True,
+    description=get_patch_format_tool_instructions()
 )
 
 
