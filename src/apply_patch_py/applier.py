@@ -2,7 +2,14 @@ import os
 import aiofiles
 from pathlib import Path
 from typing import List
-from .models import Hunk, AddFile, DeleteFile, UpdateFile, UpdateFileChunk, AffectedPaths
+from .models import (
+    Hunk,
+    AddFile,
+    DeleteFile,
+    UpdateFile,
+    UpdateFileChunk,
+    AffectedPaths,
+)
 from .parser import PatchParser
 from .search import ContentSearcher
 
@@ -85,12 +92,16 @@ class PatchApplier:
                 affected.modified.append(hunk.path)
 
     @classmethod
-    def _apply_chunks(cls, original_lines: List[str], chunks: List[UpdateFileChunk], path: Path) -> List[str]:
+    def _apply_chunks(
+        cls, original_lines: List[str], chunks: List[UpdateFileChunk], path: Path
+    ) -> List[str]:
         current_lines = list(original_lines)
         line_index = 0
 
         if not chunks:
-            raise RuntimeError(f"Invalid patch: Update file hunk for path '{path}' is empty")
+            raise RuntimeError(
+                f"Invalid patch: Update file hunk for path '{path}' is empty"
+            )
 
         for chunk in chunks:
             if chunk.change_context:
@@ -101,7 +112,9 @@ class PatchApplier:
                     False,
                 )
                 if found_idx is None:
-                    raise RuntimeError(f"Failed to find context '{chunk.change_context}' in {path}")
+                    raise RuntimeError(
+                        f"Failed to find context '{chunk.change_context}' in {path}"
+                    )
                 line_index = found_idx + 1
 
             if not chunk.old_lines:
@@ -152,7 +165,8 @@ class PatchApplier:
 
             if found_idx is None:
                 raise RuntimeError(
-                    f"Failed to find expected lines in {path}:\n" + "\n".join(chunk.old_lines)
+                    f"Failed to find expected lines in {path}:\n"
+                    + "\n".join(chunk.old_lines)
                 )
 
             match_len = len(pattern)
@@ -192,9 +206,13 @@ class PatchApplier:
             if not cls._is_unique_line(current_lines, anchor):
                 return None
 
-            idx = ContentSearcher.find_sequence(current_lines, [anchor], start_idx, is_end_of_file)
+            idx = ContentSearcher.find_sequence(
+                current_lines, [anchor], start_idx, is_end_of_file
+            )
             if idx is None and start_idx > 0:
-                idx = ContentSearcher.find_sequence(current_lines, [anchor], 0, is_end_of_file)
+                idx = ContentSearcher.find_sequence(
+                    current_lines, [anchor], 0, is_end_of_file
+                )
             if idx is None:
                 return None
             anchor_matches.append(idx)

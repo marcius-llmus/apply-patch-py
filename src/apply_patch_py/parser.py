@@ -77,7 +77,11 @@ class PatchParser:
             lines[-1] = cls.END_PATCH
             return lines
 
-        if len(lines) >= 2 and lines[-2].strip() == f"+{cls.END_PATCH}" and lines[-1].strip() == "+":
+        if (
+            len(lines) >= 2
+            and lines[-2].strip() == f"+{cls.END_PATCH}"
+            and lines[-1].strip() == "+"
+        ):
             lines = lines[:-1]
             lines[-1] = cls.END_PATCH
             return lines
@@ -103,7 +107,7 @@ class PatchParser:
         first_line = lines[0].strip()
 
         if first_line.startswith(cls.ADD_FILE):
-            path_str = first_line[len(cls.ADD_FILE):].strip()
+            path_str = first_line[len(cls.ADD_FILE) :].strip()
             content = []
             consumed = 1
 
@@ -118,22 +122,22 @@ class PatchParser:
             return AddFile(path=Path(path_str), content=content_str), consumed
 
         elif first_line.startswith(cls.DELETE_FILE):
-            path_str = first_line[len(cls.DELETE_FILE):].strip()
+            path_str = first_line[len(cls.DELETE_FILE) :].strip()
             return DeleteFile(path=Path(path_str)), 1
 
         elif first_line.startswith(cls.UPDATE_FILE):
-            path_str = first_line[len(cls.UPDATE_FILE):].strip()
+            path_str = first_line[len(cls.UPDATE_FILE) :].strip()
             consumed = 1
             remaining = lines[1:]
             move_to = None
 
             if remaining and remaining[0].strip().startswith(cls.MOVE_TO):
-                move_path = remaining[0].strip()[len(cls.MOVE_TO):].strip()
+                move_path = remaining[0].strip()[len(cls.MOVE_TO) :].strip()
                 move_to = Path(move_path)
                 consumed += 1
                 remaining = remaining[1:]
 
-            chunks = []
+            chunks: list = []
 
             while remaining:
                 if not remaining[0].strip():
@@ -154,9 +158,14 @@ class PatchParser:
                 remaining = remaining[chunk_consumed:]
 
             if not chunks:
-                raise ValueError(f"Invalid patch hunk on line {line_number}: Update file hunk for path '{path_str}' is empty")
+                raise ValueError(
+                    f"Invalid patch hunk on line {line_number}: Update file hunk for path '{path_str}' is empty"
+                )
 
-            return UpdateFile(path=Path(path_str), move_to=move_to, chunks=chunks), consumed
+            return (
+                UpdateFile(path=Path(path_str), move_to=move_to, chunks=chunks),
+                consumed,
+            )
 
         else:
             raise ValueError(
@@ -183,7 +192,7 @@ class PatchParser:
         if first.strip() == cls.EMPTY_CHANGE_CONTEXT:
             start_idx = 1
         elif first.startswith(cls.CHANGE_CONTEXT):
-            raw_context = first[len(cls.CHANGE_CONTEXT):].strip()
+            raw_context = first[len(cls.CHANGE_CONTEXT) :].strip()
             # Some LLMs (notably Gemini) emit unified-diff style range headers
             # (e.g. "-21,6 +21,7 @@") instead of a literal context anchor.
             # Our applier interprets change_context as a line to search for, so
@@ -220,12 +229,12 @@ class PatchParser:
             marker = line[0]
             content = line[1:]
 
-            if marker == ' ':
+            if marker == " ":
                 old_lines.append(content)
                 new_lines.append(content)
-            elif marker == '-':
+            elif marker == "-":
                 old_lines.append(content)
-            elif marker == '+':
+            elif marker == "+":
                 new_lines.append(content)
             else:
                 break

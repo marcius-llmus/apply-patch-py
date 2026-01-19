@@ -8,7 +8,10 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext, Tool
 
 from apply_patch_py import apply_patch as apply_patch_api
-from apply_patch_py.utils import get_patch_format_instructions, get_patch_format_tool_instructions
+from apply_patch_py.utils import (
+    get_patch_format_instructions,
+    get_patch_format_tool_instructions,
+)
 
 from providers import ANTHROPIC_SPEC, GEMINI_SPEC, OPENAI_SPEC
 
@@ -196,12 +199,16 @@ Return only the patch in the required patch format.
 
 def _assert_contains_all(haystack: str, needles: list[str]) -> None:
     missing = [n for n in needles if n not in haystack]
-    assert not missing, "Missing expected substrings:\n" + "\n".join(f"- {m}" for m in missing)
+    assert not missing, "Missing expected substrings:\n" + "\n".join(
+        f"- {m}" for m in missing
+    )
 
 
 def _assert_not_contains_any(haystack: str, needles: list[str]) -> None:
     present = [n for n in needles if n in haystack]
-    assert not present, "Unexpected substrings present:\n" + "\n".join(f"- {p}" for p in present)
+    assert not present, "Unexpected substrings present:\n" + "\n".join(
+        f"- {p}" for p in present
+    )
 
 
 def _assert_contains_ordered(haystack: str, needles: list[str]) -> None:
@@ -213,7 +220,7 @@ def _assert_contains_ordered(haystack: str, needles: list[str]) -> None:
         last = idx
 
 
-async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int: # noqa
+async def apply_patch_tool(ctx: RunContext[Path], patch: str) -> int:  # noqa
     """Apply a patch to the current workspace.
 
     Args:
@@ -231,7 +238,7 @@ APPLY_PATCH_TOOL = Tool(
     takes_ctx=True,
     docstring_format="google",
     require_parameter_descriptions=True,
-    description=get_patch_format_tool_instructions()
+    description=get_patch_format_tool_instructions(),
 )
 
 
@@ -262,20 +269,20 @@ def _assert_dirty_fixture_before(before: str) -> None:
         before,
         [
             'VERSION="0.0.0-dev"',
-            'MAGIC_NUMBER=   42',
+            "MAGIC_NUMBER=   42",
             '_WEIRD_UNICODE = "café—naïve–coöperate… “quotes” ‘single’ — minus − and hyphen‐"',
-            'def _now_iso()->str: return dt.datetime.now(dt.timezone.utc).isoformat()',
+            "def _now_iso()->str: return dt.datetime.now(dt.timezone.utc).isoformat()",
             'def sloppy_join(items, sep=","):',
-            '# intentionally wrong indentation',
-            'return sep.join([str(x) for x in items])',
-            '@timing',
-            'def compute_something_big(n: int) -> Dict[str, Any]:',
+            "# intentionally wrong indentation",
+            "return sep.join([str(x) for x in items])",
+            "@timing",
+            "def compute_something_big(n: int) -> Dict[str, Any]:",
             'data["evens"]=[x for x in range(n) if x%2==0]',
-            'class process:  # noqa: N801 intentionally shadowing',
+            "class process:  # noqa: N801 intentionally shadowing",
             'return f"process({self.x})"',
             'LOREM = """',
             '""".strip()',
-            'class ReportBuilder:',
+            "class ReportBuilder:",
             'def filler_020(): return "020"',
             'def filler_030(): return "030"',
             'def filler_050(): return "050"',
@@ -291,25 +298,25 @@ def _assert_dirty_fixture_after(after: str) -> None:
         [
             'VERSION="0.1.0-int"',
             'PATCH_TEST_TAG = "integration-heavy"',
-            '::PATCHER::',
-            'def _now_iso() -> str:',
-            'now = dt.datetime.now(dt.timezone.utc)',
-            'return now.isoformat()',
-            'def stable_hash(text: str) -> str:',
-            'Return a deterministic short hash for text (not cryptographic).',
-            'data: Dict[str, Any] = {}',
-            'safe_n = clamp(n, 0, 500)',
+            "::PATCHER::",
+            "def _now_iso() -> str:",
+            "now = dt.datetime.now(dt.timezone.utc)",
+            "return now.isoformat()",
+            "def stable_hash(text: str) -> str:",
+            "Return a deterministic short hash for text (not cryptographic).",
+            "data: Dict[str, Any] = {}",
+            "safe_n = clamp(n, 0, 500)",
             'data["odds"] = [x for x in range(safe_n) if x % 2 == 1]',
             'data["meta"] = {"version": VERSION, "tag": PATCH_TEST_TAG}',
             'LOREM = "LOREM_REMOVED_FOR_TESTING"',
-            'class ProcessCallable:  # noqa: N801 intentionally shadowing',
+            "class ProcessCallable:  # noqa: N801 intentionally shadowing",
             'return f"ProcessCallable({self.x})"',
-            'class PatchTestSentinel:',
-            'def as_event(self) -> Event:',
-            'return json.dumps(payload, ensure_ascii=False, sort_keys=True)',
+            "class PatchTestSentinel:",
+            "def as_event(self) -> Event:",
+            "return json.dumps(payload, ensure_ascii=False, sort_keys=True)",
             'def filler_050b(): return "050b"',
             'def filler_bigblock_010(): return "BIG010"',
-            '# patcher_eof_marker: keep this line at EOF',
+            "# patcher_eof_marker: keep this line at EOF",
         ],
     )
 
@@ -317,10 +324,10 @@ def _assert_dirty_fixture_after(after: str) -> None:
         after,
         [
             'VERSION="0.0.0-dev"',
-            'def _now_iso()->str: return dt.datetime.now(dt.timezone.utc).isoformat()',
+            "def _now_iso()->str: return dt.datetime.now(dt.timezone.utc).isoformat()",
             'LOREM = """',
             '""".strip()',
-            'class process:  # noqa: N801 intentionally shadowing',
+            "class process:  # noqa: N801 intentionally shadowing",
             'return f"process({self.x})"',
             'def filler_020(): return "020"',
             'def filler_030(): return "030"',
@@ -334,7 +341,7 @@ def _assert_dirty_fixture_after(after: str) -> None:
     idx_050b = after.find('def filler_050b(): return "050b"')
     assert idx_050 != -1 and idx_050b != -1 and idx_050b > idx_050
 
-    assert after.rstrip().endswith('# patcher_eof_marker: keep this line at EOF')
+    assert after.rstrip().endswith("# patcher_eof_marker: keep this line at EOF")
 
 
 @pytest.mark.integration

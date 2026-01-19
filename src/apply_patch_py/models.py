@@ -8,6 +8,7 @@ class UpdateFileChunk:
     """
     Represents a chunk of changes within a file update.
     """
+
     old_lines: List[str]
     new_lines: List[str]
     change_context: Optional[str] = None
@@ -19,6 +20,7 @@ class Hunk:
     """
     Base class for a file operation in a patch.
     """
+
     path: Path
 
 
@@ -27,6 +29,7 @@ class AddFile(Hunk):
     """
     Operation to create a new file with specific content.
     """
+
     content: str
 
 
@@ -35,6 +38,7 @@ class DeleteFile(Hunk):
     """
     Operation to delete an existing file.
     """
+
     pass
 
 
@@ -43,6 +47,7 @@ class UpdateFile(Hunk):
     """
     Operation to update an existing file, optionally renaming it.
     """
+
     chunks: List[UpdateFileChunk]
     move_to: Optional[Path] = None
 

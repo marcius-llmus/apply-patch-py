@@ -11,9 +11,7 @@ class ProviderSpec:
 
 
 OPENAI_SPEC = ProviderSpec(
-    name="openai",
-    model="openai:gpt-5.2",
-    required_env="OPENAI_API_KEY"
+    name="openai", model="openai:gpt-5.2", required_env="OPENAI_API_KEY"
 )
 ANTHROPIC_SPEC = ProviderSpec(
     name="anthropic",

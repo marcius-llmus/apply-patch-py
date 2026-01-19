@@ -29,10 +29,12 @@ async def run_apply_patch(patch_text: str) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description="Apply a patch to files.")
-    parser.add_argument("patch", nargs="?", help="The patch content. If omitted, reads from stdin.")
-    
+    parser.add_argument(
+        "patch", nargs="?", help="The patch content. If omitted, reads from stdin."
+    )
+
     args = parser.parse_args()
-    
+
     if args.patch:
         patch_text = args.patch
     else:
@@ -40,7 +42,7 @@ def main():
             parser.print_help()
             sys.exit(2)
         patch_text = sys.stdin.read()
-    
+
     try:
         sys.exit(asyncio.run(run_apply_patch(patch_text)))
     except Exception as e:

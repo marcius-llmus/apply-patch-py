@@ -4,11 +4,7 @@ from typing import List, Optional
 class ContentSearcher:
     @classmethod
     def find_sequence(
-        cls,
-        lines: List[str],
-        pattern: List[str],
-        start_idx: int,
-        is_end_of_file: bool
+        cls, lines: List[str], pattern: List[str], start_idx: int, is_end_of_file: bool
     ) -> Optional[int]:
         if not pattern:
             return start_idx

@@ -19,10 +19,18 @@ dev = [
     "black>=25.12.0",
     "mypy<2.0.0,>=1.8.0",
     "ruff<1.0.0,>=0.2.2",
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "types-aiofiles>=25.1.0.20251011",
 ]
 
 [tool.uv]
 default-groups = ["dev"]
+
+[tool.ruff]
+exclude = [
+    "tests/integration/fixture/dirty_script.py",
+]
 
 [build-system]
 requires = ["hatchling"]

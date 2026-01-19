@@ -12,12 +12,12 @@ install: init
 	@uv sync
 
 format: init
-	@$(PYTHON) ruff check . --fix
-	@$(PYTHON) black .
+	@$(PYTHON) ruff check src tests --fix
+	@$(PYTHON) black src tests
 
 lint: init
-	@$(PYTHON) ruff check .
-	@$(PYTHON) black --check .
+	@$(PYTHON) ruff check src tests
+	@$(PYTHON) black --check src tests
 	@$(PYTHON) mypy src
 
 test: init
@@ -30,12 +30,12 @@ build: init
 	@ls -la $(DIST_DIR)
 
 # Publish to PyPI (requires UV_PUBLISH_TOKEN)
-publish: init
+publish: build
 	@test -n "$$UV_PUBLISH_TOKEN" || { echo >&2 "Error: UV_PUBLISH_TOKEN is not set"; exit 1; }
 	@uv publish
 
 # Publish to TestPyPI (requires UV_PUBLISH_TOKEN)
-publish-test: init
+publish-test: build
 	@test -n "$$UV_PUBLISH_TOKEN" || { echo >&2 "Error: UV_PUBLISH_TOKEN is not set"; exit 1; }
 	@UV_PUBLISH_URL=https://test.pypi.org/legacy/ uv publish
 
