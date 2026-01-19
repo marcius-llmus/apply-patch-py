@@ -16,6 +16,9 @@ dev = [
     "pydantic-ai>=1.44.0",
     "pytest>=7.4.3,<8.0.0",
     "pytest-asyncio>=0.23.8",
+    "black>=25.12.0",
+    "mypy<2.0.0,>=1.8.0",
+    "ruff<1.0.0,>=0.2.2",
 ]
 
 [tool.uv]
