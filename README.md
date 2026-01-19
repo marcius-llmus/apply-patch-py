@@ -2,14 +2,16 @@
 
 Apply **Codex-style patch blocks** to a working directory.
 
-This project is heavily inspired by (and effectively a Python port of) the patching mechanism used by **OpenAI Codex** and tools in that ecosystem.
-Some tools (including **Codex** and **opencode**) already use this patch format; this implementation aims to be **more forgiving** and will try harder to apply *slightly malformed* patches by using whitespace/normalization fallbacks.
+This project is heavily inspired by (and effectively a Python port of) the patching mechanism used by **Codex**. Some tools (including **Codex** and **opencode**) already emit this patch format; this implementation aims to be **more forgiving** and will try harder to apply *slightly malformed* patches by using whitespace/normalization fallbacks and an additional “anchor line” fallback.
 
-## What it does
+The CLI exists and is useful for quick manual runs, but the primary intent is to use this package as the **patch-application backend for agent tools and MCP**
+
+---
+
 
 `apply-patch-py` consumes patch text shaped like:
 
-```diff
+```
 *** Begin Patch
 *** Update File: path/to/file.txt
 @@
@@ -20,26 +22,33 @@ Some tools (including **Codex** and **opencode**) already use this patch format;
 
 Supported operations:
 
-- `*** Add File: {path}`
-- `*** Delete File: {path}`
-- `*** Update File: {path}` (optionally with `*** Move to: {new_path}`)
+- `*** Add File: <path>`
+- `*** Delete File: <path>`
+- `*** Update File: <path>` (optionally with `*** Move to: <new_path>`)
 
-## Why it exists
+---
 
-LLMs sometimes emit patches that are:
+LLMs sometimes emit patches that are “almost correct” but fail strict application due to:
 
-- missing exact whitespace matches
-- slightly different punctuation (e.g. Unicode dashes/quotes)
-- otherwise "close enough" to the file content
+- whitespace drift
+- minor punctuation differences (Unicode quotes/dashes)
+- slightly malformed hunks
 
-This tool attempts to apply the patch anyway using increasingly forgiving matching strategies (exact match  rstrip match  trim match  normalized match).
+This library tries strict matching first (OpenAI models will match almost everytime, strictly), then progressively relaxes how it matches context lines:
 
-## Install
+1. **Exact match**
+2. **Right-stripped match** (`rstrip`)
+3. **Trimmed match** (`strip`)
+4. **Normalized match** (Unicode punctuation normalization + whitespace normalization)
+
+---
+
+### Install
 
 From PyPI:
 
 ```bash
-uv tool install apply-patch-py
+uv add apply-patch-py
 ```
 
 Or run without installing:
@@ -49,7 +58,106 @@ uvx apply-patch-py "*** Begin Patch
 *** End Patch"
 ```
 
-## Usage
+---
+
+### PydanticAI tool Example
+
+The patch-format instruction strings live in:
+
+- `apply_patch_py.utils.get_patch_format_instructions()`
+- `apply_patch_py.utils.get_patch_format_tool_instructions()`
+
+```python
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from pydantic import BaseModel
+from pydantic_ai import Agent, RunContext, Tool
+
+from apply_patch_py import apply_patch as apply_patch_api
+from apply_patch_py.utils import (
+    get_patch_format_instructions,
+    get_patch_format_tool_instructions,
+)
+
+
+class ApplyPatchResult(BaseModel):
+    exit_code: int
+
+
+@dataclass(frozen=True)
+class Deps:
+    workdir: Path
+
+
+async def apply_patch_tool(ctx: RunContext[Deps], patch: str) -> int:
+    """Apply a patch to the current workspace.
+
+    Args:
+        patch: The patch text to apply.
+            Must follow these instructions exactly:
+            {get_patch_format_instructions()}
+    """
+    affected = await apply_patch_api(patch, workdir=ctx.deps.workdir)
+    return 0 if affected.success else 1
+
+
+APPLY_PATCH_TOOL = Tool(
+    apply_patch_tool,
+    takes_ctx=True,
+    docstring_format="google",
+    require_parameter_descriptions=True,
+    description=get_patch_format_tool_instructions(),
+)
+
+
+agent = Agent(
+    "openai:gpt-5.2",  # any supported provider model
+    deps_type=Deps,
+    output_type=ApplyPatchResult,
+    tools=[APPLY_PATCH_TOOL],
+    system_prompt="You are a coding agent",
+)
+
+result = agent.run_sync(
+    "Create a patch that adds hello.txt with the content 'hello'.",
+    deps=Deps(workdir=Path(".")),
+)
+
+assert result.output.exit_code == 0
+```
+
+---
+
+### Direct usage
+
+You can also call the library directly:
+
+```python
+from pathlib import Path
+import asyncio
+
+from apply_patch_py import apply_patch
+
+patch = """\
+*** Begin Patch
+*** Add File: hello.txt
++hello
+*** End Patch
+"""
+
+async def main() -> None:
+    affected = await apply_patch(patch)
+    assert affected.success
+
+asyncio.run(main())
+```
+
+---
+
+### CLI usage
 
 Apply a patch provided as a command-line argument:
 
@@ -68,14 +176,13 @@ cat patch.txt | apply-patch-py
 
 The CLI prints a summary of affected files:
 
-```diff
+```text
 Success. Updated the following files:
 A hello.txt
 M existing.txt
 D obsolete.txt
 ```
 
-## Patch format examples
 
 ### Add a file
 
@@ -131,7 +238,7 @@ D obsolete.txt
 *** End Patch
 ```
 
-## Development
+---
 
 ### Run tests
 
@@ -141,20 +248,23 @@ uv run pytest
 
 ### Integration tests (LLM providers)
 
-This repo also contains integration tests that validate patch generation via real LLM providers.
-They are **skipped by default** unless explicitly selected:
-+
+This repo also contains integration tests that validate patch generation via real LLM providers. They are **skipped by default** unless explicitly selected:
+
 ```bash
 uv run pytest -m integration
 ```
 
 See `tests/integration/` for provider configuration.
 
-## Notes on lineage
+---
+
+## Notes
 
 - The patch format and workflow are **directly inspired by OpenAI Codex** diff patching.
 - Some other tools (e.g. opencode) emit the same format.
-- This project is essentially a **port** with a few pragmatic changes to improve success rates on imperfect LLM output.
+- This project is essentially a **port** from their rust patcher with a few changes to improve success rates on imperfect LLM output.
+
+---
 
 ## License
 
