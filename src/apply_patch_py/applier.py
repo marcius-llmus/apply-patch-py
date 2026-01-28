@@ -1,4 +1,3 @@
-import itertools
 import os
 import math
 import difflib
@@ -46,7 +45,7 @@ class PatchApplier:
         """
 
         chunk_norm = {
-            ContentSearcher._normalise(line)
+            ContentSearcher.normalise(line)
             for line in chunk_lines
             if not cls._is_comment_or_blank(line)
         }
@@ -57,7 +56,7 @@ class PatchApplier:
         for line in pattern_lines:
             if cls._is_comment_or_blank(line):
                 continue
-            if ContentSearcher._normalise(line) in chunk_norm:
+            if ContentSearcher.normalise(line) in chunk_norm:
                 matches += 1
         return matches
 
@@ -211,7 +210,7 @@ class PatchApplier:
                 fuzzy_res = cls._fuzzy_find(current_lines, pattern, line_index)
                 if fuzzy_res is None and line_index > 0:
                     fuzzy_res = cls._fuzzy_find(current_lines, pattern, 0)
-                
+
                 if fuzzy_res:
                     found_idx, match_len = fuzzy_res
 
@@ -241,7 +240,7 @@ class PatchApplier:
             return None
 
         pattern_str = "\n".join(pattern)
-        
+
         # Coarse gating: only consider candidates that are somewhat similar.
         coarse_thresh = 0.6
         # Refined threshold after applying safety gates.
@@ -255,16 +254,17 @@ class PatchApplier:
         pat_len = len(pattern)
         min_len = math.floor(pat_len * (1 - scale))
         max_len = math.ceil(pat_len * (1 + scale))
-        
+
         # If pattern is small, ensure we at least try exact length
         if min_len == max_len:
-             max_len += 1
+            max_len += 1
 
         lines_len = len(current_lines)
 
         for length in range(min_len, max_len + 1):
-            if length <= 0: continue
-            
+            if length <= 0:
+                continue
+
             for i in range(start_idx, lines_len - length + 1):
                 chunk = current_lines[i : i + length]
                 chunk_str = "\n".join(chunk)
@@ -285,7 +285,7 @@ class PatchApplier:
 
                     # Calculate refined score
                     smart_score = cls._smart_fuzzy_score(chunk, pattern)
-                    
+
                     if smart_score > max_similarity:
                         max_similarity = smart_score
                         best_start = i
@@ -297,7 +297,9 @@ class PatchApplier:
         return None
 
     @classmethod
-    def _smart_fuzzy_score(cls, chunk_lines: List[str], pattern_lines: List[str]) -> float:
+    def _smart_fuzzy_score(
+        cls, chunk_lines: List[str], pattern_lines: List[str]
+    ) -> float:
         """Calculates a weighted similarity score between chunk and pattern.
 
         - Code lines (not starting with #) have high weight (1.0).
@@ -309,7 +311,9 @@ class PatchApplier:
 
         # Safety: if there are many code lines and none of them match exactly,
         # treat this as unsafe even if SequenceMatcher returns a high score.
-        code_lines = [l for l in pattern_lines if not cls._is_comment_or_blank(l)]
+        code_lines = [
+            line for line in pattern_lines if not cls._is_comment_or_blank(line)
+        ]
         if len(code_lines) >= 3:
             exact_matches = cls._count_exact_code_line_matches(
                 chunk_lines=chunk_lines, pattern_lines=pattern_lines
@@ -323,12 +327,12 @@ class PatchApplier:
 
         # 2. Align lines using SequenceMatcher on the list of strings
         matcher = difflib.SequenceMatcher(None, chunk_norm, pattern_norm)
-        
+
         total_weight = 0.0
         weighted_score = 0.0
-        
+
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == 'equal':
+            if tag == "equal":
                 # Lines match perfectly after strip
                 for k in range(i2 - i1):
                     # Check if code or comment based on pattern
@@ -338,21 +342,21 @@ class PatchApplier:
                     weight = 1.0 if is_code else 0.1
                     weighted_score += 1.0 * weight
                     total_weight += weight
-                    
+
                     # Verify strict equality for code lines even in 'equal' block (sanity check)
                     # (SequenceMatcher 'equal' means they match based on the input lists, which are stripped)
                     # So this is already fine.
-            
-            elif tag == 'replace':
+
+            elif tag == "replace":
                 # Lines are different, compare them individually
                 len1 = i2 - i1
                 len2 = j2 - j1
                 min_len = min(len1, len2)
-                
+
                 for k in range(min_len):
                     c_line = chunk_norm[i1 + k]
                     p_line = pattern_norm[j1 + k]
-                    
+
                     is_code = not cls._is_comment_or_blank(p_line)
                     weight = 1.0 if is_code else 0.1
                     total_weight += weight
@@ -360,7 +364,9 @@ class PatchApplier:
                     if is_code:
                         # STRICT GATING: Code lines must match exactly (normalized)
                         # We do not allow fuzzy matching on code logic, only on comments/whitespace.
-                        if ContentSearcher._normalise(c_line) == ContentSearcher._normalise(p_line):
+                        if ContentSearcher.normalise(
+                            c_line
+                        ) == ContentSearcher.normalise(p_line):
                             weighted_score += 1.0 * weight
                         else:
                             weighted_score += 0.0  # Penalize mismatching code heavily
@@ -368,7 +374,7 @@ class PatchApplier:
                         # Comments can be fuzzy
                         sim = difflib.SequenceMatcher(None, c_line, p_line).ratio()
                         weighted_score += sim * weight
-                
+
                 # Extra lines in pattern are "missing" from chunk -> mismatch (sim=0)
 
         if total_weight <= 0:

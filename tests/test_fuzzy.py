@@ -12,7 +12,9 @@ from apply_patch_py import apply_patch
         ("# Level Constants", "# Display Settings"),
     ],
 )
-async def test_apply_patch_fuzzy_matches_nearby_context(tmp_path, original_header, patch_header):
+async def test_apply_patch_fuzzy_matches_nearby_context(
+    tmp_path, original_header, patch_header
+):
     """Applies an Update File hunk even if a nearby context line differs.
 
     This covers the common case where an LLM changes a comment header, but the
@@ -43,7 +45,7 @@ async def test_apply_patch_fuzzy_matches_nearby_context(tmp_path, original_heade
             f" {patch_header}",
             " INTERNAL_WIDTH = 320",
             " INTERNAL_HEIGHT = 224",
-            "+LEVEL_WIDTH = 5000", # The addition
+            "+LEVEL_WIDTH = 5000",  # The addition
             " SCALE = 3",
             " SCREEN_WIDTH = INTERNAL_WIDTH * SCALE",
             " SCREEN_HEIGHT = INTERNAL_HEIGHT * SCALE",
@@ -90,12 +92,14 @@ async def test_apply_patch_fuzzy_rejects_corrupted_code(tmp_path):
             "@@",
             " # Display Settings",
             " INTERNAL_WIDTH = 320",
-            " INTERNAL_HEIGadadHT = 224", # Typo
+            " INTERNAL_HEIGadadHT = 224",  # Typo
             "+LEVEL_WIDTH = 5000",
             "*** End Patch",
             "",
         ]
     )
 
-    with pytest.raises(RuntimeError, match=r"Failed to find expected lines in settings\.py"):
+    with pytest.raises(
+        RuntimeError, match=r"Failed to find expected lines in settings\.py"
+    ):
         await apply_patch(patch, workdir=tmp_path)

@@ -55,12 +55,12 @@ class ContentSearcher:
     @classmethod
     def _match_normalized(cls, lines: List[str], pattern: List[str], idx: int) -> bool:
         for p_idx, pat_line in enumerate(pattern):
-            if cls._normalise(lines[idx + p_idx]) != cls._normalise(pat_line):
+            if cls.normalise(lines[idx + p_idx]) != cls.normalise(pat_line):
                 return False
         return True
 
     @staticmethod
-    def _normalise(text: str) -> str:
+    def normalise(text: str) -> str:
         replacements = {
             "\u2010": "-",
             "\u2011": "-",
