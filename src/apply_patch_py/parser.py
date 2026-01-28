@@ -15,6 +15,87 @@ class PatchParser:
     CHANGE_CONTEXT = "@@ "
     EMPTY_CHANGE_CONTEXT = "@@"
 
+    @staticmethod
+    def _count_leading_pluses(s: str, *, max_pluses: int = 2) -> int:
+        i = 0
+        while i < len(s) and s[i] == "+":
+            i += 1
+            if i > max_pluses:
+                return i
+        return i
+
+    @classmethod
+    def _strip_prefixed_marker(cls, line: str, *, max_pluses: int = 2) -> str:
+        s = line.strip()
+        if not s.startswith("+"):
+            return s
+
+        i = cls._count_leading_pluses(s, max_pluses=max_pluses)
+        if i > max_pluses:
+            return s
+        return s[i:].lstrip()
+
+    @classmethod
+    def _is_unprefixed_end_patch(cls, line: str) -> bool:
+        return line.strip() == cls.END_PATCH
+
+    @classmethod
+    def _strip_single_plus_prefix(cls, line: str) -> str:
+        s = line.strip()
+        if s.startswith("++"):
+            return s
+        if s.startswith("+"):
+            return s[1:].lstrip()
+        return s
+
+    @classmethod
+    def _maybe_strip_plus_from_hunk_header(cls, line: str) -> str:
+        """Normalize a single leading '+' from a hunk header.
+
+        LLMs sometimes prefix hunk headers with '+' (or even '++') when they are
+        accidentally emitted as diff additions.
+
+        We only strip a single '+' when the remainder is an unambiguous hunk
+        header (Add/Delete/Update). We do not normalize arbitrary lines.
+        """
+
+        s = line.strip()
+        if not s.startswith("+") or s.startswith("++"):
+            return s
+        candidate = s[1:].lstrip()
+        if cls._is_hunk_header(candidate):
+            return candidate
+        return s
+
+    @classmethod
+    def _maybe_strip_pluses_from_hunk_header(cls, line: str) -> str:
+        """Like _maybe_strip_plus_from_hunk_header, but tolerate '++*** ...'."""
+
+        s = line.strip()
+        if not s.startswith("+"):
+            return s
+
+        i = cls._count_leading_pluses(s, max_pluses=2)
+        if i > 2:
+            return s
+
+        candidate = s[i:].lstrip()
+        if cls._is_hunk_header(candidate):
+            return candidate
+        return s
+
+    @classmethod
+    def _is_blank(cls, line: str) -> bool:
+        return not line.strip()
+
+    @classmethod
+    def _is_end_patch_marker(cls, line: str) -> bool:
+        s = line.strip()
+        if s == cls.END_PATCH:
+            return True
+        stripped = cls._strip_prefixed_marker(line)
+        return stripped == cls.END_PATCH
+
     @classmethod
     def parse(cls, text: str) -> Patch:
         lines = text.strip().splitlines()
@@ -23,29 +104,53 @@ class PatchParser:
         if not lines:
             raise ValueError("Empty patch")
 
-        first = lines[0].strip()
-        last = lines[-1].strip()
+        lines = cls._coerce_llm_patch(lines)
+        if not lines:
+            raise ValueError("Empty patch")
 
-        if first != cls.BEGIN_PATCH:
-            raise ValueError(f"The first line of the patch must be '{cls.BEGIN_PATCH}'")
+        # being and end are implicit. if they come, OK, but if they don't, DW :D
+        start_idx = 0
+        end_idx = len(lines)
 
-        if last != cls.END_PATCH:
-            lines = cls._coerce_llm_patch(lines)
-            if not lines:
-                raise ValueError("Empty patch")
-            last = lines[-1].strip()
+        if lines and lines[0].strip() == cls.BEGIN_PATCH:
+            start_idx = 1
 
-        if last != cls.END_PATCH:
-            raise ValueError(f"The last line of the patch must be '{cls.END_PATCH}'")
+        if end_idx > start_idx and cls._is_end_patch_marker(lines[end_idx - 1]):
+            end_idx -= 1
+
+        content_lines = lines[start_idx:end_idx]
 
         hunks: List[Hunk] = []
-        content_lines = lines[1:-1]
         idx = 0
-
         while idx < len(content_lines):
-            hunk, consumed = cls._parse_one_hunk(content_lines[idx:], idx + 2)
+            if cls._is_blank(content_lines[idx]):
+                idx += 1
+                continue
+
+            if cls._is_end_patch_marker(content_lines[idx]):
+                break
+
+            hunk, consumed = cls._parse_one_hunk(
+                content_lines[idx:], idx + start_idx + 1
+            )
             hunks.append(hunk)
             idx += consumed
+
+        if not hunks:
+            # Maintain existing CLI/tool behavior which expects this to surface
+            # as "No files were modified." at the applier layer.
+            raise ValueError("No files were modified.")
+
+        while idx < len(content_lines):
+            if cls._is_blank(content_lines[idx]) or cls._is_end_patch_marker(
+                content_lines[idx]
+            ):
+                idx += 1
+                continue
+            raise ValueError(
+                f"Invalid patch hunk on line {idx + start_idx + 1}: '{content_lines[idx]}' is not a valid hunk header. "
+                "Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'"
+            )
 
         return Patch(hunks=hunks)
 
@@ -103,8 +208,31 @@ class PatchParser:
         return lines
 
     @classmethod
+    def _is_hunk_header(cls, line: str) -> bool:
+        s = line.strip()
+        return (
+            s.startswith(cls.ADD_FILE)
+            or s.startswith(cls.DELETE_FILE)
+            or s.startswith(cls.UPDATE_FILE)
+        )
+
+    @classmethod
+    def _is_prefixed_hunk_header(cls, line: str) -> bool:
+        stripped = cls._strip_prefixed_marker(line)
+        if stripped == line.strip():
+            return False
+        return cls._is_hunk_header(stripped)
+
+    @classmethod
+    def _is_prefixed_end_patch(cls, line: str) -> bool:
+        stripped = cls._strip_prefixed_marker(line)
+        if stripped == line.strip():
+            return False
+        return stripped == cls.END_PATCH
+
+    @classmethod
     def _parse_one_hunk(cls, lines: List[str], line_number: int) -> Tuple[Hunk, int]:
-        first_line = lines[0].strip()
+        first_line = cls._maybe_strip_pluses_from_hunk_header(lines[0])
 
         if first_line.startswith(cls.ADD_FILE):
             path_str = first_line[len(cls.ADD_FILE) :].strip()
@@ -112,6 +240,13 @@ class PatchParser:
             consumed = 1
 
             for line in lines[1:]:
+                if (
+                    cls._is_prefixed_hunk_header(line)
+                    or cls._is_prefixed_end_patch(line)
+                    or cls._is_end_patch_marker(line)
+                ):
+                    break
+
                 if line.startswith("+"):
                     content.append(line[1:])
                     consumed += 1
@@ -145,7 +280,18 @@ class PatchParser:
                     remaining = remaining[1:]
                     continue
 
-                if remaining[0].startswith("***"):
+                # Break on the start of the next hunk OR end marker, even if
+                # the model prefixed the marker with '+' or '++'.
+                if cls._is_unprefixed_end_patch(remaining[0]):
+                    break
+                if cls._is_hunk_header(remaining[0]):
+                    break
+                if cls._is_prefixed_hunk_header(remaining[0]):
+                    break
+                if cls._is_prefixed_end_patch(remaining[0]):
+                    break
+
+                if cls._is_end_patch_marker(remaining[0]):
                     break
 
                 chunk, chunk_consumed = cls._parse_update_chunk(
@@ -188,6 +334,16 @@ class PatchParser:
 
         first = lines[0]
         change_context = None
+
+        # LLMs sometimes prefix the chunk header with '+' or '++'.
+        # We normalize:
+        #  - '+@@ ...' -> '@@ ...'
+        #  - '++@@ ...' -> '@@ ...'
+        stripped = first.lstrip()
+        if stripped.startswith("+@@"):
+            first = stripped[1:]
+        elif stripped.startswith("++@@"):
+            first = stripped[2:]
 
         if first.strip() == cls.EMPTY_CHANGE_CONTEXT:
             start_idx = 1
