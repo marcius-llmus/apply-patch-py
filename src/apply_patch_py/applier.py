@@ -246,7 +246,7 @@ class PatchApplier:
         # Refined threshold after applying safety gates.
         smart_thresh = 0.9
 
-        max_similarity = 0
+        max_similarity = 0.0
         best_start = -1
         best_len = -1
 
