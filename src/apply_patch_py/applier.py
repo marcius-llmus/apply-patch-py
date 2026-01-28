@@ -1,7 +1,9 @@
 import os
+import math
+import difflib
 import aiofiles
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 from .models import (
     Hunk,
@@ -140,6 +142,7 @@ class PatchApplier:
             pattern: List[str] = list(chunk.old_lines)
             new_block: List[str] = list(chunk.new_lines)
 
+            match_len = len(pattern)
             found_idx = ContentSearcher.find_sequence(
                 current_lines,
                 pattern,
@@ -158,6 +161,8 @@ class PatchApplier:
                     line_index,
                     chunk.is_end_of_file,
                 )
+                if found_idx is not None:
+                    match_len = len(pattern)
 
             if found_idx is None and line_index > 0:
                 found_idx = ContentSearcher.find_sequence(
@@ -166,6 +171,8 @@ class PatchApplier:
                     0,
                     chunk.is_end_of_file,
                 )
+                if found_idx is not None:
+                    match_len = len(pattern)
 
             if found_idx is None:
                 found_idx = cls._fallback_find_lines_independently(
@@ -174,6 +181,18 @@ class PatchApplier:
                     start_idx=line_index,
                     is_end_of_file=chunk.is_end_of_file,
                 )
+                # fallback uses original pattern length
+                if found_idx is not None:
+                     match_len = len(pattern)
+
+            if found_idx is None:
+                # Fuzzy search
+                fuzzy_res = cls._fuzzy_find(current_lines, pattern, line_index)
+                if fuzzy_res is None and line_index > 0:
+                    fuzzy_res = cls._fuzzy_find(current_lines, pattern, 0)
+                
+                if fuzzy_res:
+                    found_idx, match_len = fuzzy_res
 
             if found_idx is None:
                 raise RuntimeError(
@@ -181,11 +200,61 @@ class PatchApplier:
                     + "\n".join(chunk.old_lines)
                 )
 
-            match_len = len(pattern)
             current_lines[found_idx : found_idx + match_len] = new_block
             line_index = found_idx + len(new_block)
 
         return current_lines
+
+    @classmethod
+    def _fuzzy_find(
+        cls,
+        current_lines: List[str],
+        pattern: List[str],
+        start_idx: int,
+    ) -> Tuple[int, int] | None:
+        """
+        Finds the best matching chunk in current_lines starting from start_idx
+        using difflib.SequenceMatcher. Returns (start_index, length) or None.
+        """
+        if not pattern:
+            return None
+
+        pattern_str = "\n".join(pattern)
+        
+        similarity_thresh = 0.8
+        max_similarity = 0
+        best_start = -1
+        best_len = -1
+
+        scale = 0.1
+        pat_len = len(pattern)
+        min_len = math.floor(pat_len * (1 - scale))
+        max_len = math.ceil(pat_len * (1 + scale))
+        
+        # If pattern is small, ensure we at least try exact length
+        if min_len == max_len:
+             max_len += 1
+
+        lines_len = len(current_lines)
+
+        for length in range(min_len, max_len + 1):
+            if length <= 0: continue
+            
+            for i in range(start_idx, lines_len - length + 1):
+                chunk = current_lines[i : i + length]
+                chunk_str = "\n".join(chunk)
+
+                ratio = difflib.SequenceMatcher(None, chunk_str, pattern_str).ratio()
+
+                if ratio > max_similarity:
+                    max_similarity = ratio
+                    best_start = i
+                    best_len = length
+
+        if max_similarity >= similarity_thresh:
+            return best_start, best_len
+
+        return None
 
     @classmethod
     def _fallback_find_lines_independently(
