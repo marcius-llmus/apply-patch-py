@@ -1,3 +1,4 @@
+import itertools
 import os
 import math
 import difflib
@@ -28,6 +29,37 @@ class PatchApplier:
         if root != target and root not in target.parents:
             raise RuntimeError(f"Path must be within the workspace: {rel_path}")
         return target
+
+    @staticmethod
+    def _is_comment_or_blank(line: str) -> bool:
+        s = line.strip()
+        return not s or s.startswith("#")
+
+    @classmethod
+    def _count_exact_code_line_matches(
+        cls, *, chunk_lines: List[str], pattern_lines: List[str]
+    ) -> int:
+        """Counts exact matches among non-comment, non-blank lines.
+
+        This is a safety gate for fuzzy matching: we only accept a fuzzy match
+        if enough real code lines match exactly (after normalization).
+        """
+
+        chunk_norm = {
+            ContentSearcher._normalise(line)
+            for line in chunk_lines
+            if not cls._is_comment_or_blank(line)
+        }
+        if not chunk_norm:
+            return 0
+
+        matches = 0
+        for line in pattern_lines:
+            if cls._is_comment_or_blank(line):
+                continue
+            if ContentSearcher._normalise(line) in chunk_norm:
+                matches += 1
+        return matches
 
     @classmethod
     async def apply(cls, patch_text: str, workdir: Path = Path(".")) -> AffectedPaths:
@@ -175,17 +207,6 @@ class PatchApplier:
                     match_len = len(pattern)
 
             if found_idx is None:
-                found_idx = cls._fallback_find_lines_independently(
-                    current_lines=current_lines,
-                    pattern=pattern,
-                    start_idx=line_index,
-                    is_end_of_file=chunk.is_end_of_file,
-                )
-                # fallback uses original pattern length
-                if found_idx is not None:
-                     match_len = len(pattern)
-
-            if found_idx is None:
                 # Fuzzy search
                 fuzzy_res = cls._fuzzy_find(current_lines, pattern, line_index)
                 if fuzzy_res is None and line_index > 0:
@@ -221,12 +242,16 @@ class PatchApplier:
 
         pattern_str = "\n".join(pattern)
         
-        similarity_thresh = 0.8
+        # Coarse gating: only consider candidates that are somewhat similar.
+        coarse_thresh = 0.6
+        # Refined threshold after applying safety gates.
+        smart_thresh = 0.9
+
         max_similarity = 0
         best_start = -1
         best_len = -1
 
-        scale = 0.1
+        scale = 0.3
         pat_len = len(pattern)
         min_len = math.floor(pat_len * (1 - scale))
         max_len = math.ceil(pat_len * (1 + scale))
@@ -246,75 +271,107 @@ class PatchApplier:
 
                 ratio = difflib.SequenceMatcher(None, chunk_str, pattern_str).ratio()
 
-                if ratio > max_similarity:
-                    max_similarity = ratio
-                    best_start = i
-                    best_len = length
+                if ratio > coarse_thresh:
+                    # Safety gate: require at least 2 exact code-line matches
+                    # (ignoring comments/blanks). This prevents patching unrelated
+                    # regions that are only superficially similar.
+                    if (
+                        cls._count_exact_code_line_matches(
+                            chunk_lines=chunk, pattern_lines=pattern
+                        )
+                        < 2
+                    ):
+                        continue
 
-        if max_similarity >= similarity_thresh:
+                    # Calculate refined score
+                    smart_score = cls._smart_fuzzy_score(chunk, pattern)
+                    
+                    if smart_score > max_similarity:
+                        max_similarity = smart_score
+                        best_start = i
+                        best_len = length
+
+        if max_similarity >= smart_thresh:
             return best_start, best_len
 
         return None
 
     @classmethod
-    def _fallback_find_lines_independently(
-        cls,
-        *,
-        current_lines: List[str],
-        pattern: List[str],
-        start_idx: int,
-        is_end_of_file: bool,
-    ) -> int | None:
-        """Fallback matcher for imperfect LLM hunks.
+    def _smart_fuzzy_score(cls, chunk_lines: List[str], pattern_lines: List[str]) -> float:
+        """Calculates a weighted similarity score between chunk and pattern.
 
-        Strict matching is attempted first. If it fails, we try to locate the edit
-        position using a couple of distinctive "anchor" lines from the old block.
-
-        To reduce the chance of patching the wrong location, we only accept anchors
-        that are unique in the file.
+        - Code lines (not starting with #) have high weight (1.0).
+        - Comment lines have low weight (0.1).
+        - Lines are normalized (stripped) before comparison.
         """
 
-        candidates: List[str] = [p for p in pattern if p.strip()]
-        if not candidates:
-            return None
+        from .search import ContentSearcher
 
-        anchors = candidates[:2]
-        if not anchors:
-            return None
-
-        anchor_matches: List[int] = []
-        for anchor in anchors:
-            if not cls._is_unique_line(current_lines, anchor):
-                return None
-
-            idx = ContentSearcher.find_sequence(
-                current_lines, [anchor], start_idx, is_end_of_file
+        # Safety: if there are many code lines and none of them match exactly,
+        # treat this as unsafe even if SequenceMatcher returns a high score.
+        code_lines = [l for l in pattern_lines if not cls._is_comment_or_blank(l)]
+        if len(code_lines) >= 3:
+            exact_matches = cls._count_exact_code_line_matches(
+                chunk_lines=chunk_lines, pattern_lines=pattern_lines
             )
-            if idx is None and start_idx > 0:
-                idx = ContentSearcher.find_sequence(
-                    current_lines, [anchor], 0, is_end_of_file
-                )
-            if idx is None:
-                return None
-            anchor_matches.append(idx)
+            if exact_matches == 0:
+                return 0.0
 
-        if len(anchor_matches) >= 2 and anchor_matches[1] < anchor_matches[0]:
-            return None
+        # 1. Normalize lines
+        chunk_norm = [line.strip() for line in chunk_lines]
+        pattern_norm = [line.strip() for line in pattern_lines]
 
-        return min(anchor_matches)
+        # 2. Align lines using SequenceMatcher on the list of strings
+        matcher = difflib.SequenceMatcher(None, chunk_norm, pattern_norm)
+        
+        total_weight = 0.0
+        weighted_score = 0.0
+        
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == 'equal':
+                # Lines match perfectly after strip
+                for k in range(i2 - i1):
+                    # Check if code or comment based on pattern
+                    # Use pattern line to determine weight (what we are looking for)
+                    line = pattern_norm[j1 + k]
+                    is_code = not cls._is_comment_or_blank(line)
+                    weight = 1.0 if is_code else 0.1
+                    weighted_score += 1.0 * weight
+                    total_weight += weight
+                    
+                    # Verify strict equality for code lines even in 'equal' block (sanity check)
+                    # (SequenceMatcher 'equal' means they match based on the input lists, which are stripped)
+                    # So this is already fine.
+            
+            elif tag == 'replace':
+                # Lines are different, compare them individually
+                len1 = i2 - i1
+                len2 = j2 - j1
+                min_len = min(len1, len2)
+                
+                for k in range(min_len):
+                    c_line = chunk_norm[i1 + k]
+                    p_line = pattern_norm[j1 + k]
+                    
+                    is_code = not cls._is_comment_or_blank(p_line)
+                    weight = 1.0 if is_code else 0.1
+                    total_weight += weight
 
-    @staticmethod
-    def _is_unique_line(lines: List[str], line: str) -> bool:
-        """Return True if 'line' occurs exactly once in 'lines'.
+                    if is_code:
+                        # STRICT GATING: Code lines must match exactly (normalized)
+                        # We do not allow fuzzy matching on code logic, only on comments/whitespace.
+                        if ContentSearcher._normalise(c_line) == ContentSearcher._normalise(p_line):
+                            weighted_score += 1.0 * weight
+                        else:
+                            weighted_score += 0.0  # Penalize mismatching code heavily
+                    else:
+                        # Comments can be fuzzy
+                        sim = difflib.SequenceMatcher(None, c_line, p_line).ratio()
+                        weighted_score += sim * weight
+                
+                # Extra lines in pattern are "missing" from chunk -> mismatch (sim=0)
 
-        We use strict equality; if normalization is needed, it should be applied at
-        the search layer.
-        """
+        if total_weight <= 0:
+            return 0.0
 
-        count = 0
-        for candidate in lines:
-            if candidate == line:
-                count += 1
-                if count > 1:
-                    return False
-        return count == 1
+        return weighted_score / total_weight

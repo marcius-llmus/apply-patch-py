@@ -42,12 +42,11 @@ async def test_apply_patch_fuzzy_matches_nearby_context(tmp_path, original_heade
             "@@",
             f" {patch_header}",
             " INTERNAL_WIDTH = 320",
-            " INTERNAL_HEIGadadHT = 224",
-            " INTERNAL_HEIGadadHT = 224",
-            "+LEVEL_WIDTH = 5000",
+            " INTERNAL_HEIGHT = 224",
+            "+LEVEL_WIDTH = 5000", # The addition
             " SCALE = 3",
-            " SCREEN_WIDTH = INTERsNAL_WIDTH * SCALE",
-            " SCREEN_HEIGHT = INTasasERNAL_HEIGHT * SCALE",
+            " SCREEN_WIDTH = INTERNAL_WIDTH * SCALE",
+            " SCREEN_HEIGHT = INTERNAL_HEIGHT * SCALE",
             " FPS = 60",
             "*** End Patch",
             "",
@@ -57,13 +56,14 @@ async def test_apply_patch_fuzzy_matches_nearby_context(tmp_path, original_heade
     affected = await apply_patch(patch, workdir=tmp_path)
     assert affected.success is True
     assert affected.modified == [Path("settings.py")]
+    # Verify it applied
 
     updated = target.read_text(encoding="utf-8")
     assert "LEVEL_WIDTH = 5000\n" in updated
     assert updated.endswith("\n")
 
 
-async def test_apply_patch_fuzzy_does_not_apply_if_similarity_too_low(tmp_path):
+async def test_apply_patch_fuzzy_rejects_corrupted_code(tmp_path):
     """When the patch context is too different, we should still fail safely."""
 
     target = tmp_path / "settings.py"
@@ -82,14 +82,15 @@ async def test_apply_patch_fuzzy_does_not_apply_if_similarity_too_low(tmp_path):
         )
     )
 
-    # This hunk doesn't resemble the file block enough.
+    # This hunk has corrupted identifiers in code lines. Should be rejected.
     patch = "\n".join(
         [
             "*** Begin Patch",
             "*** Update File: settings.py",
             "@@",
-            " totally unrelated header",
-            " -not even python",
+            " # Display Settings",
+            " INTERNAL_WIDTH = 320",
+            " INTERNAL_HEIGadadHT = 224", # Typo
             "+LEVEL_WIDTH = 5000",
             "*** End Patch",
             "",
