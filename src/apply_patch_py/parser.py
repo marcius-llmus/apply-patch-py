@@ -33,32 +33,13 @@ class PatchParser:
             return s
         return s[i:].lstrip()
 
-    def _is_unprefixed_end_patch(self, line: str) -> bool:
-        return line.strip() == self.END_PATCH
-
-    @staticmethod
-    def _strip_single_plus_prefix(line: str) -> str:
-        s = line.strip()
-        if s.startswith("++"):
-            return s
-        if s.startswith("+"):
-            return s[1:].lstrip()
-        return s
-
     def _maybe_strip_pluses_from_hunk_header(self, line: str) -> str:
         """It will allow lines with malformed '++*** ...'."""
 
-        if not (s := line.strip()).startswith("+"):
-            return s
-
-        i = self._count_leading_pluses(s, max_pluses=2)
-        if i > 2:
-            return s
-
-        candidate = s[i:].lstrip()
-        if self._is_hunk_header(candidate):
-            return candidate
-        return s
+        stripped = self._strip_prefixed_marker(line)
+        if self._is_hunk_header(stripped):
+            return stripped
+        return line.strip()
 
     @staticmethod
     def _is_blank(line: str) -> bool:
@@ -144,17 +125,9 @@ class PatchParser:
             or s.startswith(self.UPDATE_FILE)
         )
 
-    def _is_prefixed_hunk_header(self, line: str) -> bool:
+    def _is_any_hunk_header(self, line: str) -> bool:
         stripped = self._strip_prefixed_marker(line)
-        if stripped == line.strip():
-            return False
         return self._is_hunk_header(stripped)
-
-    def _is_prefixed_end_patch(self, line: str) -> bool:
-        stripped = self._strip_prefixed_marker(line)
-        if stripped == line.strip():
-            return False
-        return stripped == self.END_PATCH
 
     def _parse_one_hunk(self, lines: List[str], line_number: int) -> Tuple[Hunk, int]:
         first_line = self._maybe_strip_pluses_from_hunk_header(lines[0])
@@ -165,11 +138,7 @@ class PatchParser:
             consumed = 1
 
             for line in lines[1:]:
-                if (
-                    self._is_prefixed_hunk_header(line)
-                    or self._is_prefixed_end_patch(line)
-                    or self._is_end_patch_marker(line)
-                ):
+                if self._is_any_hunk_header(line) or self._is_end_patch_marker(line):
                     break
 
                 if line.startswith("+"):
@@ -211,16 +180,9 @@ class PatchParser:
 
                 # Break on the start of the next hunk OR end marker, even if
                 # the model prefixed the marker with '+' or '++'.
-                if self._is_unprefixed_end_patch(remaining[0]):
-                    break
-                if self._is_hunk_header(remaining[0]):
-                    break
-                if self._is_prefixed_hunk_header(remaining[0]):
-                    break
-                if self._is_prefixed_end_patch(remaining[0]):
-                    break
-
                 if self._is_end_patch_marker(remaining[0]):
+                    break
+                if self._is_any_hunk_header(remaining[0]):
                     break
 
                 chunk, chunk_consumed = self._parse_update_chunk(
