@@ -88,9 +88,6 @@ class PatchParser:
         return stripped == self.END_PATCH
 
     def parse(self, text: str) -> Patch:
-        return self._parse(text)
-
-    def _parse(self, text: str) -> Patch:
         lines = text.strip().splitlines()
         lines = self._strip_heredoc(lines)
 
