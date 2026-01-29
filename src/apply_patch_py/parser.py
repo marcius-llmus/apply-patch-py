@@ -143,8 +143,6 @@ class PatchParser:
 
                 if line.startswith("+"):
                     val = line[1:]
-                    if val.startswith("+"):
-                        val = val[1:]
                     content.append(val)
                     consumed += 1
                 else:
@@ -170,7 +168,6 @@ class PatchParser:
                 remaining = remaining[1:]
 
             chunks: list = []
-            diff_lines: list = []
 
             while remaining:
                 if not remaining[0].strip():
@@ -190,7 +187,6 @@ class PatchParser:
                     line_number=line_number + consumed,
                     allow_missing_context=not chunks,
                 )
-                diff_lines.extend(remaining[:chunk_consumed])
                 chunks.append(chunk)
                 consumed += chunk_consumed
                 remaining = remaining[chunk_consumed:]
@@ -200,14 +196,11 @@ class PatchParser:
                     f"Invalid patch hunk on line {line_number}: Update file hunk for path '{path_str}' is empty"
                 )
 
-            diff_content = "\n".join(diff_lines) + "\n" if diff_lines else ""
-
             return (
                 UpdateFile(
                     path=Path(path_str),
                     move_to=move_to,
                     chunks=chunks,
-                    content=diff_content,
                 ),
                 consumed,
             )
