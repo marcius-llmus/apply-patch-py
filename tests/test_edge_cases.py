@@ -193,3 +193,81 @@ def foo():
 
     with pytest.raises(RuntimeError, match="Ambiguous context"):
         await apply_patch(patch, workdir=tmp_path)
+
+
+async def test_apply_patch_rejects_add_through_symlink_outside_workspace(tmp_path):
+    """Ensure workspace enforcement also blocks paths that traverse via symlinks.
+
+    Create a symlink inside the workspace that points outside of it, then attempt
+    to add a file underneath that symlinked directory.
+    """
+
+    outside_dir = tmp_path.parent / "outside_symlink_target"
+    outside_dir.mkdir(exist_ok=True)
+
+    link = tmp_path / "link_to_outside"
+    link.symlink_to(outside_dir, target_is_directory=True)
+
+    patch = """*** Begin Patch
+*** Add File: link_to_outside/evil.txt
+++owned
+*** End Patch"""
+
+    with pytest.raises(RuntimeError, match=r"Path must be within the workspace"):
+        await apply_patch(patch, workdir=tmp_path)
+
+    assert not (outside_dir / "evil.txt").exists()
+
+
+async def test_apply_patch_rejects_update_through_symlink_outside_workspace(tmp_path):
+    """Ensure Update File is rejected when the target resolves outside workspace via symlink."""
+
+    outside_dir = tmp_path.parent / "outside_symlink_target_update"
+    outside_dir.mkdir(exist_ok=True)
+
+    # Create file outside workspace
+    outside_file = outside_dir / "victim.txt"
+    outside_file.write_text("hello\n", encoding="utf-8")
+
+    # Symlink inside workspace pointing to outside file
+    link = tmp_path / "link_victim.txt"
+    link.symlink_to(outside_file)
+
+    patch = """*** Begin Patch
+*** Update File: link_victim.txt
+@@
+-hello
+++pwned
+*** End Patch"""
+
+    with pytest.raises(RuntimeError, match=r"Path must be within the workspace"):
+        await apply_patch(patch, workdir=tmp_path)
+
+    # Ensure outside file wasn't modified
+    assert outside_file.read_text(encoding="utf-8") == "hello\n"
+
+
+async def test_apply_patch_rejects_move_to_through_symlink_outside_workspace(tmp_path):
+    """Ensure Move to destination is rejected when it resolves outside workspace via symlink."""
+
+    (tmp_path / "src.txt").write_text("hello\n", encoding="utf-8")
+
+    outside_dir = tmp_path.parent / "outside_symlink_target_move"
+    outside_dir.mkdir(exist_ok=True)
+
+    link_dir = tmp_path / "link_dir"
+    link_dir.symlink_to(outside_dir, target_is_directory=True)
+
+    patch = """*** Begin Patch
+*** Update File: src.txt
+*** Move to: link_dir/moved.txt
+@@
+-hello
+++world
+*** End Patch"""
+
+    with pytest.raises(RuntimeError, match=r"Path must be within the workspace"):
+        await apply_patch(patch, workdir=tmp_path)
+
+    assert (tmp_path / "src.txt").read_text(encoding="utf-8") == "hello\n"
+    assert not (outside_dir / "moved.txt").exists()

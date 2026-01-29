@@ -1,8 +1,6 @@
+from pathlib import Path
 import pytest
 from apply_patch_py.applier import PatchApplier
-
-# We'll reuse the logic from PatchApplier._fuzzy_find to score these scenarios
-# but exposing the score directly for calibration.
 
 
 def calculate_score(
@@ -12,25 +10,9 @@ def calculate_score(
     Simulates the scoring logic inside PatchApplier._fuzzy_find.
     Returns the best ratio found.
     """
-    # This mimics the logic in _smart_fuzzy_score and _fuzzy_find
-    # We need to access the internal logic or replicate it here for testing.
-    # Since _smart_fuzzy_score is a classmethod, we can call it.
 
     chunk_lines = file_content.splitlines()
     pattern_lines = patch_context.splitlines()
-
-    # _smart_fuzzy_score calculates score for a specific chunk.
-    # _fuzzy_find searches for the best chunk.
-    # For these tests, we assume the file_content IS the candidate chunk
-    # (or close enough that we can just score them directly to see the raw affinity).
-
-    # NOTE: PatchApplier._smart_fuzzy_score expects lines to NOT be pre-stripped,
-    # because it does its own stripping/normalization inside.
-    # However, our test strings below are raw multiline strings.
-    # We should pass them as lines.
-
-    from pathlib import Path
-
     return PatchApplier()._smart_fuzzy_score(
         chunk_lines, pattern_lines, path=Path(filename)
     )
