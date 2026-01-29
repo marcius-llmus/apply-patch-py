@@ -211,6 +211,10 @@ class PatchParser:
                 "Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'"
             )
 
+    @staticmethod
+    def _get_raw_diff_from_lines(diff_lines):
+        return "\n".join(diff_lines) + "\n"
+
     def _parse_update_chunk(
         self,
         lines: List[str],
@@ -225,6 +229,7 @@ class PatchParser:
 
         first = lines[0]
         change_context = None
+        diff_lines = []
 
         # LLMs sometimes prefix the chunk header with '+' or '++'.
         # We normalize:
@@ -238,6 +243,7 @@ class PatchParser:
 
         if first.strip() == self.EMPTY_CHANGE_CONTEXT:
             start_idx = 1
+            diff_lines.append("@@")
         elif first.startswith(self.CHANGE_CONTEXT):
             raw_context = first[len(self.CHANGE_CONTEXT) :].strip()
             # Some LLMs (notably Gemini) emit unified-diff style range headers
@@ -249,6 +255,7 @@ class PatchParser:
             else:
                 change_context = raw_context
             start_idx = 1
+            diff_lines.append(f"@@ {change_context}" if change_context else "@@")
         else:
             if not allow_missing_context:
                 raise ValueError(
@@ -270,6 +277,7 @@ class PatchParser:
             if line == "":
                 old_lines.append("")
                 new_lines.append("")
+                diff_lines.append("")
                 consumed += 1
                 continue
 
@@ -279,12 +287,15 @@ class PatchParser:
             if marker == " ":
                 old_lines.append(content)
                 new_lines.append(content)
+                diff_lines.append(line)
             elif marker == "-":
                 old_lines.append(content)
+                diff_lines.append(line)
             elif marker == "+":
                 if content.startswith("+"):
                     content = content[1:]
                 new_lines.append(content)
+                diff_lines.append(f"+{content}")
             else:
                 break
 
@@ -295,4 +306,15 @@ class PatchParser:
                 f"Invalid patch hunk on line {line_number + 1}: Update hunk does not contain any lines"
             )
 
-        return UpdateFileChunk(old_lines, new_lines, change_context, is_eof), consumed
+        diff = self._get_raw_diff_from_lines(diff_lines)
+
+        return (
+            UpdateFileChunk(
+                diff=diff,
+                old_lines=old_lines,
+                new_lines=new_lines,
+                change_context=change_context,
+                is_end_of_file=is_eof,
+            ),
+            consumed,
+        )

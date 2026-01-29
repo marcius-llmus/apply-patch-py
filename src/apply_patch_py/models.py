@@ -9,6 +9,7 @@ class UpdateFileChunk:
     Represents a chunk of changes within a file update.
     """
 
+    diff: str
     old_lines: List[str]
     new_lines: List[str]
     change_context: Optional[str] = None
@@ -32,6 +33,10 @@ class AddFile(Hunk):
 
     content: str
 
+    @property
+    def diff(self) -> str:
+        return "".join(f"+{line}\n" for line in self.content.splitlines())
+
 
 @dataclass
 class DeleteFile(Hunk):
@@ -50,7 +55,10 @@ class UpdateFile(Hunk):
 
     chunks: List[UpdateFileChunk]
     move_to: Optional[Path] = None
-    content: str = ""
+
+    @property
+    def diff(self) -> str:
+        return "".join(chunk.diff for chunk in self.chunks)
 
 
 @dataclass

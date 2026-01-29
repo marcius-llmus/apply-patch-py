@@ -242,7 +242,7 @@ def test_update_file_populates_diff_field():
     assert isinstance(hunk, UpdateFile)
 
     expected_diff = "@@ def foo():\n-    pass\n+    return 1\n"
-    assert hunk.content == expected_diff
+    assert hunk.diff == expected_diff
 
 
 def test_update_file_diff_field_complex():
@@ -274,7 +274,7 @@ def test_update_file_diff_field_complex():
     assert hunk1.path == Path("file1.py")
 
     expected_diff1 = "@@ def a():\n-    pass\n+    return 1\n\n@@ def b():\n-    pass\n+    return 2\n"
-    assert hunk1.content == expected_diff1
+    assert hunk1.diff == expected_diff1
 
     # Check second file (1 chunk, no context)
     hunk2 = patch.hunks[1]
@@ -282,4 +282,4 @@ def test_update_file_diff_field_complex():
     assert hunk2.path == Path("file2.py")
 
     expected_diff2 = "@@\n-old\n+new\n"
-    assert hunk2.content == expected_diff2
+    assert hunk2.diff == expected_diff2
