@@ -14,7 +14,23 @@ from .models import (
     AffectedPaths,
 )
 from .parser import PatchParser
-from .search import ContentSearcher
+from .search import count_occurrences, find_sequence, normalise
+
+COMMENT_PREFIXES = {
+    ".py": "#",
+    ".sh": "#",
+    ".yaml": "#",
+    ".yml": "#",
+    ".js": "//",
+    ".ts": "//",
+    ".c": "//",
+    ".cpp": "//",
+    ".java": "//",
+    ".rs": "//",
+    ".go": "//",
+    ".sql": "--",
+    ".lua": "--",
+}
 
 
 class PatchApplier:
@@ -30,13 +46,23 @@ class PatchApplier:
         return target
 
     @staticmethod
-    def _is_comment_or_blank(line: str) -> bool:
-        s = line.strip()
-        return not s or s.startswith("#")
+    def _is_comment_or_blank(line: str, path: Path | None = None) -> bool:
+        if not (s := line.strip()):
+            return True
+
+        prefix = "#"
+        if path:
+            prefix = COMMENT_PREFIXES.get(path.suffix, "#")
+
+        return s.startswith(prefix)
 
     @classmethod
     def _count_exact_code_line_matches(
-        cls, *, chunk_lines: List[str], pattern_lines: List[str]
+        cls,
+        *,
+        chunk_lines: List[str],
+        pattern_lines: List[str],
+        path: Path | None = None,
     ) -> int:
         """Counts exact matches among non-comment, non-blank lines.
 
@@ -45,18 +71,18 @@ class PatchApplier:
         """
 
         chunk_norm = {
-            ContentSearcher.normalise(line)
+            normalise(line)
             for line in chunk_lines
-            if not cls._is_comment_or_blank(line)
+            if not cls._is_comment_or_blank(line, path)
         }
         if not chunk_norm:
             return 0
 
         matches = 0
         for line in pattern_lines:
-            if cls._is_comment_or_blank(line):
+            if cls._is_comment_or_blank(line, path):
                 continue
-            if ContentSearcher.normalise(line) in chunk_norm:
+            if normalise(line) in chunk_norm:
                 matches += 1
         return matches
 
@@ -151,7 +177,7 @@ class PatchApplier:
         for chunk in chunks:
             search_start_index = line_index
             if chunk.change_context:
-                found_idx = ContentSearcher.find_sequence(
+                found_idx = find_sequence(
                     current_lines,
                     [chunk.change_context],
                     line_index,
@@ -165,7 +191,7 @@ class PatchApplier:
 
             if not chunk.old_lines:
                 if chunk.change_context:
-                    match_count = ContentSearcher.count_occurrences(
+                    match_count = count_occurrences(
                         current_lines, [chunk.change_context], search_start_index
                     )
                     if match_count > 1:
@@ -186,7 +212,7 @@ class PatchApplier:
             new_block: List[str] = list(chunk.new_lines)
 
             match_len = len(pattern)
-            found_idx = ContentSearcher.find_sequence(
+            found_idx = find_sequence(
                 current_lines,
                 pattern,
                 line_index,
@@ -198,7 +224,7 @@ class PatchApplier:
                 if new_block and new_block[-1] == "":
                     new_block = new_block[:-1]
 
-                found_idx = ContentSearcher.find_sequence(
+                found_idx = find_sequence(
                     current_lines,
                     pattern,
                     line_index,
@@ -208,7 +234,7 @@ class PatchApplier:
                     match_len = len(pattern)
 
             if found_idx is None and line_index > 0:
-                found_idx = ContentSearcher.find_sequence(
+                found_idx = find_sequence(
                     current_lines,
                     pattern,
                     0,
@@ -219,9 +245,11 @@ class PatchApplier:
 
             if found_idx is None:
                 # Fuzzy search
-                fuzzy_res = cls._fuzzy_find(current_lines, pattern, line_index)
+                fuzzy_res = cls._fuzzy_find(
+                    current_lines, pattern, line_index, path=path
+                )
                 if fuzzy_res is None and line_index > 0:
-                    fuzzy_res = cls._fuzzy_find(current_lines, pattern, 0)
+                    fuzzy_res = cls._fuzzy_find(current_lines, pattern, 0, path=path)
 
                 if fuzzy_res:
                     found_idx, match_len = fuzzy_res
@@ -243,6 +271,7 @@ class PatchApplier:
         current_lines: List[str],
         pattern: List[str],
         start_idx: int,
+        path: Path | None = None,
     ) -> Tuple[int, int] | None:
         """
         Finds the best matching chunk in current_lines starting from start_idx
@@ -289,14 +318,14 @@ class PatchApplier:
                     # regions that are only superficially similar.
                     if (
                         cls._count_exact_code_line_matches(
-                            chunk_lines=chunk, pattern_lines=pattern
+                            chunk_lines=chunk, pattern_lines=pattern, path=path
                         )
                         < 2
                     ):
                         continue
 
                     # Calculate refined score
-                    smart_score = cls._smart_fuzzy_score(chunk, pattern)
+                    smart_score = cls._smart_fuzzy_score(chunk, pattern, path=path)
 
                     if smart_score > max_similarity:
                         max_similarity = smart_score
@@ -310,25 +339,26 @@ class PatchApplier:
 
     @classmethod
     def _smart_fuzzy_score(
-        cls, chunk_lines: List[str], pattern_lines: List[str]
+        cls,
+        chunk_lines: List[str],
+        pattern_lines: List[str],
+        path: Path | None = None,
     ) -> float:
         """Calculates a weighted similarity score between chunk and pattern.
 
-        - Code lines (not starting with #) have high weight (1.0).
+        - Code lines (not starting with comment prefix) have high weight (1.0).
         - Comment lines have low weight (0.1).
         - Lines are normalized (stripped) before comparison.
         """
 
-        from .search import ContentSearcher
-
         # Safety: if there are many code lines and none of them match exactly,
         # treat this as unsafe even if SequenceMatcher returns a high score.
         code_lines = [
-            line for line in pattern_lines if not cls._is_comment_or_blank(line)
+            line for line in pattern_lines if not cls._is_comment_or_blank(line, path)
         ]
         if len(code_lines) >= 3:
             exact_matches = cls._count_exact_code_line_matches(
-                chunk_lines=chunk_lines, pattern_lines=pattern_lines
+                chunk_lines=chunk_lines, pattern_lines=pattern_lines, path=path
             )
             if exact_matches == 0:
                 return 0.0
@@ -350,7 +380,7 @@ class PatchApplier:
                     # Check if code or comment based on pattern
                     # Use pattern line to determine weight (what we are looking for)
                     line = pattern_norm[j1 + k]
-                    is_code = not cls._is_comment_or_blank(line)
+                    is_code = not cls._is_comment_or_blank(line, path)
                     weight = 1.0 if is_code else 0.1
                     weighted_score += 1.0 * weight
                     total_weight += weight
@@ -369,16 +399,14 @@ class PatchApplier:
                     c_line = chunk_norm[i1 + k]
                     p_line = pattern_norm[j1 + k]
 
-                    is_code = not cls._is_comment_or_blank(p_line)
+                    is_code = not cls._is_comment_or_blank(p_line, path)
                     weight = 1.0 if is_code else 0.1
                     total_weight += weight
 
                     if is_code:
                         # STRICT GATING: Code lines must match exactly (normalized)
                         # We do not allow fuzzy matching on code logic, only on comments/whitespace.
-                        if ContentSearcher.normalise(
-                            c_line
-                        ) == ContentSearcher.normalise(p_line):
+                        if normalise(c_line) == normalise(p_line):
                             weighted_score += 1.0 * weight
                         else:
                             weighted_score += 0.0  # Penalize mismatching code heavily

@@ -24,23 +24,20 @@ class PatchParser:
                 return i
         return i
 
-    @classmethod
-    def _strip_prefixed_marker(cls, line: str, *, max_pluses: int = 2) -> str:
-        s = line.strip()
-        if not s.startswith("+"):
+    def _strip_prefixed_marker(self, line: str, *, max_pluses: int = 2) -> str:
+        if not (s := line.strip()).startswith("+"):
             return s
 
-        i = cls._count_leading_pluses(s, max_pluses=max_pluses)
+        i = self._count_leading_pluses(s, max_pluses=max_pluses)
         if i > max_pluses:
             return s
         return s[i:].lstrip()
 
-    @classmethod
-    def _is_unprefixed_end_patch(cls, line: str) -> bool:
-        return line.strip() == cls.END_PATCH
+    def _is_unprefixed_end_patch(self, line: str) -> bool:
+        return line.strip() == self.END_PATCH
 
-    @classmethod
-    def _strip_single_plus_prefix(cls, line: str) -> str:
+    @staticmethod
+    def _strip_single_plus_prefix(line: str) -> str:
         s = line.strip()
         if s.startswith("++"):
             return s
@@ -48,8 +45,7 @@ class PatchParser:
             return s[1:].lstrip()
         return s
 
-    @classmethod
-    def _maybe_strip_plus_from_hunk_header(cls, line: str) -> str:
+    def _maybe_strip_plus_from_hunk_header(self, line: str) -> str:
         """Normalize a single leading '+' from a hunk header.
 
         LLMs sometimes prefix hunk headers with '+' (or even '++') when they are
@@ -59,52 +55,50 @@ class PatchParser:
         header (Add/Delete/Update). We do not normalize arbitrary lines.
         """
 
-        s = line.strip()
-        if not s.startswith("+") or s.startswith("++"):
+        if not (s := line.strip()).startswith("+") or s.startswith("++"):
             return s
         candidate = s[1:].lstrip()
-        if cls._is_hunk_header(candidate):
+        if self._is_hunk_header(candidate):
             return candidate
         return s
 
-    @classmethod
-    def _maybe_strip_pluses_from_hunk_header(cls, line: str) -> str:
+    def _maybe_strip_pluses_from_hunk_header(self, line: str) -> str:
         """Like _maybe_strip_plus_from_hunk_header, but tolerate '++*** ...'."""
 
-        s = line.strip()
-        if not s.startswith("+"):
+        if not (s := line.strip()).startswith("+"):
             return s
 
-        i = cls._count_leading_pluses(s, max_pluses=2)
+        i = self._count_leading_pluses(s, max_pluses=2)
         if i > 2:
             return s
 
         candidate = s[i:].lstrip()
-        if cls._is_hunk_header(candidate):
+        if self._is_hunk_header(candidate):
             return candidate
         return s
 
-    @classmethod
-    def _is_blank(cls, line: str) -> bool:
+    @staticmethod
+    def _is_blank(line: str) -> bool:
         return not line.strip()
 
-    @classmethod
-    def _is_end_patch_marker(cls, line: str) -> bool:
-        s = line.strip()
-        if s == cls.END_PATCH:
+    def _is_end_patch_marker(self, line: str) -> bool:
+        if line.strip() == self.END_PATCH:
             return True
-        stripped = cls._strip_prefixed_marker(line)
-        return stripped == cls.END_PATCH
+        stripped = self._strip_prefixed_marker(line)
+        return stripped == self.END_PATCH
 
     @classmethod
     def parse(cls, text: str) -> Patch:
+        return cls()._parse(text)
+
+    def _parse(self, text: str) -> Patch:
         lines = text.strip().splitlines()
-        lines = cls._strip_heredoc(lines)
+        lines = self._strip_heredoc(lines)
 
         if not lines:
             raise ValueError("Empty patch")
 
-        lines = cls._coerce_llm_patch(lines)
+        lines = self._coerce_llm_patch(lines)
         if not lines:
             raise ValueError("Empty patch")
 
@@ -112,10 +106,10 @@ class PatchParser:
         start_idx = 0
         end_idx = len(lines)
 
-        if lines and lines[0].strip() == cls.BEGIN_PATCH:
+        if lines and lines[0].strip() == self.BEGIN_PATCH:
             start_idx = 1
 
-        if end_idx > start_idx and cls._is_end_patch_marker(lines[end_idx - 1]):
+        if end_idx > start_idx and self._is_end_patch_marker(lines[end_idx - 1]):
             end_idx -= 1
 
         content_lines = lines[start_idx:end_idx]
@@ -123,14 +117,14 @@ class PatchParser:
         hunks: List[Hunk] = []
         idx = 0
         while idx < len(content_lines):
-            if cls._is_blank(content_lines[idx]):
+            if self._is_blank(content_lines[idx]):
                 idx += 1
                 continue
 
-            if cls._is_end_patch_marker(content_lines[idx]):
+            if self._is_end_patch_marker(content_lines[idx]):
                 break
 
-            hunk, consumed = cls._parse_one_hunk(
+            hunk, consumed = self._parse_one_hunk(
                 content_lines[idx:], idx + start_idx + 1
             )
             hunks.append(hunk)
@@ -142,7 +136,7 @@ class PatchParser:
             raise ValueError("No files were modified.")
 
         while idx < len(content_lines):
-            if cls._is_blank(content_lines[idx]) or cls._is_end_patch_marker(
+            if self._is_blank(content_lines[idx]) or self._is_end_patch_marker(
                 content_lines[idx]
             ):
                 idx += 1
@@ -154,8 +148,7 @@ class PatchParser:
 
         return Patch(hunks=hunks)
 
-    @classmethod
-    def _coerce_llm_patch(cls, lines: List[str]) -> List[str]:
+    def _coerce_llm_patch(self, lines: List[str]) -> List[str]:
         """Attempt to recover from common LLM formatting mistakes.
 
         In some model outputs, "*** End Patch" may appear as an added line in the
@@ -178,23 +171,23 @@ class PatchParser:
         if not lines:
             return lines
 
-        if lines[-1].strip() == f"+{cls.END_PATCH}":
-            lines[-1] = cls.END_PATCH
+        if lines[-1].strip() == f"+{self.END_PATCH}":
+            lines[-1] = self.END_PATCH
             return lines
 
         if (
             len(lines) >= 2
-            and lines[-2].strip() == f"+{cls.END_PATCH}"
+            and lines[-2].strip() == f"+{self.END_PATCH}"
             and lines[-1].strip() == "+"
         ):
             lines = lines[:-1]
-            lines[-1] = cls.END_PATCH
+            lines[-1] = self.END_PATCH
             return lines
 
         return lines
 
-    @classmethod
-    def _strip_heredoc(cls, lines: List[str]) -> List[str]:
+    @staticmethod
+    def _strip_heredoc(lines: List[str]) -> List[str]:
         if len(lines) < 4:
             return lines
 
@@ -207,43 +200,38 @@ class PatchParser:
 
         return lines
 
-    @classmethod
-    def _is_hunk_header(cls, line: str) -> bool:
-        s = line.strip()
+    def _is_hunk_header(self, line: str) -> bool:
         return (
-            s.startswith(cls.ADD_FILE)
-            or s.startswith(cls.DELETE_FILE)
-            or s.startswith(cls.UPDATE_FILE)
+            (s := line.strip()).startswith(self.ADD_FILE)
+            or s.startswith(self.DELETE_FILE)
+            or s.startswith(self.UPDATE_FILE)
         )
 
-    @classmethod
-    def _is_prefixed_hunk_header(cls, line: str) -> bool:
-        stripped = cls._strip_prefixed_marker(line)
+    def _is_prefixed_hunk_header(self, line: str) -> bool:
+        stripped = self._strip_prefixed_marker(line)
         if stripped == line.strip():
             return False
-        return cls._is_hunk_header(stripped)
+        return self._is_hunk_header(stripped)
 
-    @classmethod
-    def _is_prefixed_end_patch(cls, line: str) -> bool:
-        stripped = cls._strip_prefixed_marker(line)
+    def _is_prefixed_end_patch(self, line: str) -> bool:
+        stripped = self._strip_prefixed_marker(line)
         if stripped == line.strip():
             return False
-        return stripped == cls.END_PATCH
+        return stripped == self.END_PATCH
 
-    @classmethod
-    def _parse_one_hunk(cls, lines: List[str], line_number: int) -> Tuple[Hunk, int]:
-        first_line = cls._maybe_strip_pluses_from_hunk_header(lines[0])
+    def _parse_one_hunk(self, lines: List[str], line_number: int) -> Tuple[Hunk, int]:
+        first_line = self._maybe_strip_pluses_from_hunk_header(lines[0])
 
-        if first_line.startswith(cls.ADD_FILE):
-            path_str = first_line[len(cls.ADD_FILE) :].strip()
+        if first_line.startswith(self.ADD_FILE):
+            path_str = first_line[len(self.ADD_FILE) :].strip()
             content = []
             consumed = 1
 
             for line in lines[1:]:
                 if (
-                    cls._is_prefixed_hunk_header(line)
-                    or cls._is_prefixed_end_patch(line)
-                    or cls._is_end_patch_marker(line)
+                    self._is_prefixed_hunk_header(line)
+                    or self._is_prefixed_end_patch(line)
+                    or self._is_end_patch_marker(line)
                 ):
                     break
 
@@ -259,18 +247,18 @@ class PatchParser:
             content_str = "\n".join(content) + "\n" if content else ""
             return AddFile(path=Path(path_str), content=content_str), consumed
 
-        elif first_line.startswith(cls.DELETE_FILE):
-            path_str = first_line[len(cls.DELETE_FILE) :].strip()
+        elif first_line.startswith(self.DELETE_FILE):
+            path_str = first_line[len(self.DELETE_FILE) :].strip()
             return DeleteFile(path=Path(path_str)), 1
 
-        elif first_line.startswith(cls.UPDATE_FILE):
-            path_str = first_line[len(cls.UPDATE_FILE) :].strip()
+        elif first_line.startswith(self.UPDATE_FILE):
+            path_str = first_line[len(self.UPDATE_FILE) :].strip()
             consumed = 1
             remaining = lines[1:]
             move_to = None
 
-            if remaining and remaining[0].strip().startswith(cls.MOVE_TO):
-                move_path = remaining[0].strip()[len(cls.MOVE_TO) :].strip()
+            if remaining and remaining[0].strip().startswith(self.MOVE_TO):
+                move_path = remaining[0].strip()[len(self.MOVE_TO) :].strip()
                 move_to = Path(move_path)
                 consumed += 1
                 remaining = remaining[1:]
@@ -285,19 +273,19 @@ class PatchParser:
 
                 # Break on the start of the next hunk OR end marker, even if
                 # the model prefixed the marker with '+' or '++'.
-                if cls._is_unprefixed_end_patch(remaining[0]):
+                if self._is_unprefixed_end_patch(remaining[0]):
                     break
-                if cls._is_hunk_header(remaining[0]):
+                if self._is_hunk_header(remaining[0]):
                     break
-                if cls._is_prefixed_hunk_header(remaining[0]):
+                if self._is_prefixed_hunk_header(remaining[0]):
                     break
-                if cls._is_prefixed_end_patch(remaining[0]):
-                    break
-
-                if cls._is_end_patch_marker(remaining[0]):
+                if self._is_prefixed_end_patch(remaining[0]):
                     break
 
-                chunk, chunk_consumed = cls._parse_update_chunk(
+                if self._is_end_patch_marker(remaining[0]):
+                    break
+
+                chunk, chunk_consumed = self._parse_update_chunk(
                     remaining,
                     line_number=line_number + consumed,
                     allow_missing_context=not chunks,
@@ -322,9 +310,8 @@ class PatchParser:
                 "Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'"
             )
 
-    @classmethod
     def _parse_update_chunk(
-        cls,
+        self,
         lines: List[str],
         *,
         line_number: int,
@@ -348,10 +335,10 @@ class PatchParser:
         elif stripped.startswith("++@@"):
             first = stripped[2:]
 
-        if first.strip() == cls.EMPTY_CHANGE_CONTEXT:
+        if first.strip() == self.EMPTY_CHANGE_CONTEXT:
             start_idx = 1
-        elif first.startswith(cls.CHANGE_CONTEXT):
-            raw_context = first[len(cls.CHANGE_CONTEXT) :].strip()
+        elif first.startswith(self.CHANGE_CONTEXT):
+            raw_context = first[len(self.CHANGE_CONTEXT) :].strip()
             # Some LLMs (notably Gemini) emit unified-diff style range headers
             # (e.g. "-21,6 +21,7 @@") instead of a literal context anchor.
             # Our applier interprets change_context as a line to search for, so
@@ -374,7 +361,7 @@ class PatchParser:
         consumed = start_idx
 
         for line in lines[start_idx:]:
-            if line.strip() == cls.EOF_MARKER.strip():
+            if line.strip() == self.EOF_MARKER.strip():
                 is_eof = True
                 consumed += 1
                 break

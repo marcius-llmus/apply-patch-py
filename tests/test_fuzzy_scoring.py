@@ -5,7 +5,9 @@ from apply_patch_py.applier import PatchApplier
 # but exposing the score directly for calibration.
 
 
-def calculate_score(file_content: str, patch_context: str) -> float:
+def calculate_score(
+    file_content: str, patch_context: str, filename: str = "test.py"
+) -> float:
     """
     Simulates the scoring logic inside PatchApplier._fuzzy_find.
     Returns the best ratio found.
@@ -27,7 +29,11 @@ def calculate_score(file_content: str, patch_context: str) -> float:
     # However, our test strings below are raw multiline strings.
     # We should pass them as lines.
 
-    return PatchApplier._smart_fuzzy_score(chunk_lines, pattern_lines)
+    from pathlib import Path
+
+    return PatchApplier._smart_fuzzy_score(
+        chunk_lines, pattern_lines, path=Path(filename)
+    )
 
 
 BASE_FILE = """
@@ -148,3 +154,26 @@ def test_score_calibration(name, file_text, patch_text, desc, min_expected):
     else:
         # For invalid scenarios, we expect a low score (or at least strictly below the threshold of 0.9)
         assert score < 0.9, f"Score {score} too high for invalid scenario {name}"
+
+
+def test_sql_comment_scoring_differentiation():
+    """
+    Verify that using the correct extension (SQL) treats '--' as comments (low weight),
+    allowing a high score even if the comment text changes.
+    Using the wrong extension (Python) treats '--' as code (high weight),
+    punishing the mismatch more heavily.
+    """
+    file_text = "-- New comment\nSELECT * FROM table"
+    patch_text = "-- Old comment\nSELECT * FROM table"
+
+    # In SQL (correct ext), '--' is comment -> low weight -> high score.
+    score_sql = calculate_score(file_text, patch_text, filename="query.sql")
+
+    # In Python (wrong ext), '--' is code -> high weight -> mismatch -> lower score.
+    score_py = calculate_score(file_text, patch_text, filename="query.py")
+
+    print(f"SQL Score: {score_sql}")
+    print(f"Py Score:  {score_py}")
+
+    assert score_sql > 0.9
+    assert score_sql > score_py
