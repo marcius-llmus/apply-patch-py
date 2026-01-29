@@ -163,9 +163,12 @@ class PatchApplier:
                 line_index = found_idx + 1
 
             if not chunk.old_lines:
-                insertion_idx = len(current_lines)
-                if current_lines and current_lines[-1] == "":
-                    insertion_idx -= 1
+                if chunk.change_context:
+                    insertion_idx = line_index
+                else:
+                    insertion_idx = len(current_lines)
+                    if current_lines and current_lines[-1] == "":
+                        insertion_idx -= 1
                 current_lines[insertion_idx:insertion_idx] = chunk.new_lines
                 line_index = insertion_idx + len(chunk.new_lines)
                 continue

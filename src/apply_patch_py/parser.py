@@ -248,7 +248,10 @@ class PatchParser:
                     break
 
                 if line.startswith("+"):
-                    content.append(line[1:])
+                    val = line[1:]
+                    if val.startswith("+"):
+                        val = val[1:]
+                    content.append(val)
                     consumed += 1
                 else:
                     break
@@ -391,6 +394,8 @@ class PatchParser:
             elif marker == "-":
                 old_lines.append(content)
             elif marker == "+":
+                if content.startswith("+"):
+                    content = content[1:]
                 new_lines.append(content)
             else:
                 break
