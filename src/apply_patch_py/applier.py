@@ -35,15 +35,17 @@ COMMENT_PREFIXES = {
 
 class PatchApplier:
     @staticmethod
-    def _resolve_in_workdir(workdir: Path, rel_path: Path) -> Path:
-        if rel_path.is_absolute():
-            raise RuntimeError(f"Path must be within the workspace: {rel_path}")
+    def _resolve_in_workdir(workdir: Path, path: Path) -> Path:
+        if path.is_absolute():
+            raise RuntimeError(f"Path must be within the workspace: {path}")
 
-        root = workdir.resolve()
-        target = (root / rel_path).resolve()
-        if root != target and root not in target.parents:
-            raise RuntimeError(f"Path must be within the workspace: {rel_path}")
-        return target
+        resolved_root = workdir.resolve()
+        full_path = (workdir / path).resolve()
+
+        if not full_path.is_relative_to(resolved_root):
+            raise RuntimeError(f"Path must be within the workspace: {path}")
+
+        return full_path
 
     @staticmethod
     def _is_comment_or_blank(line: str, path: Path | None = None) -> bool:
@@ -103,8 +105,8 @@ class PatchApplier:
         return affected
 
     async def _apply_hunk(self, hunk: Hunk, workdir: Path, affected: AffectedPaths):
+        path = self._resolve_in_workdir(workdir, hunk.path)
         root = workdir.resolve()
-        path = self._resolve_in_workdir(root, hunk.path)
 
         if isinstance(hunk, AddFile):
             if path.parent != root:
@@ -142,7 +144,7 @@ class PatchApplier:
             new_content = "\n".join(new_lines)
 
             if hunk.move_to:
-                dest = self._resolve_in_workdir(root, hunk.move_to)
+                dest = self._resolve_in_workdir(workdir, hunk.move_to)
                 if dest.parent != root:
                     dest.parent.mkdir(parents=True, exist_ok=True)
 
