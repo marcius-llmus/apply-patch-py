@@ -94,10 +94,6 @@ class PatchParser:
         if not lines:
             raise ValueError("Empty patch")
 
-        lines = self._coerce_llm_patch(lines)
-        if not lines:
-            raise ValueError("Empty patch")
-
         # being and end are implicit. if they come, OK, but if they don't, DW :D
         start_idx = 0
         end_idx = len(lines)
@@ -143,44 +139,6 @@ class PatchParser:
             )
 
         return Patch(hunks=hunks)
-
-    def _coerce_llm_patch(self, lines: List[str]) -> List[str]:
-        """Attempt to recover from common LLM formatting mistakes.
-
-        In some model outputs, "*** End Patch" may appear as an added line in the
-        final hunk (prefixed with '+') instead of as the required final line.
-        This function normalizes that case by:
-        - stripping trailing whitespace-only lines
-        - converting a trailing '+*** End Patch' (and trailing '+') into
-          a proper final '*** End Patch'
-
-        It intentionally stays conservative to avoid mis-parsing legitimate
-        file content additions.
-        """
-
-        if not lines:
-            return lines
-
-        while lines and not lines[-1].strip():
-            lines.pop()
-
-        if not lines:
-            return lines
-
-        if lines[-1].strip() == f"+{self.END_PATCH}":
-            lines[-1] = self.END_PATCH
-            return lines
-
-        if (
-            len(lines) >= 2
-            and lines[-2].strip() == f"+{self.END_PATCH}"
-            and lines[-1].strip() == "+"
-        ):
-            lines = lines[:-1]
-            lines[-1] = self.END_PATCH
-            return lines
-
-        return lines
 
     @staticmethod
     def _strip_heredoc(lines: List[str]) -> List[str]:
