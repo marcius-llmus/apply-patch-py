@@ -50,6 +50,7 @@ class UpdateFile(Hunk):
 
     chunks: List[UpdateFileChunk]
     move_to: Optional[Path] = None
+    content: str = ""
 
 
 @dataclass

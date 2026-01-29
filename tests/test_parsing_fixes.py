@@ -226,3 +226,60 @@ world
 """
     with pytest.raises(ValueError):
         _parse(patch_text)
+
+
+def test_update_file_populates_diff_field():
+    """Test that UpdateFile.diff contains the raw hunk lines."""
+    patch_text = """*** Begin Patch
+*** Update File: foo.py
+@@ def foo():
+-    pass
++    return 1
+*** End Patch
+"""
+    patch = _parse(patch_text)
+    hunk = patch.hunks[0]
+    assert isinstance(hunk, UpdateFile)
+
+    expected_diff = "@@ def foo():\n-    pass\n+    return 1\n"
+    assert hunk.content == expected_diff
+
+
+def test_update_file_diff_field_complex():
+    """
+    Test that UpdateFile.diff accurately reflects the raw content of the hunk,
+    even with multiple files and multiple chunks.
+    """
+    patch_text = """*** Begin Patch
+*** Update File: file1.py
+@@ def a():
+-    pass
++    return 1
+
+@@ def b():
+-    pass
++    return 2
+*** Update File: file2.py
+@@
+-old
++new
+*** End Patch
+"""
+    patch = _parse(patch_text)
+    assert len(patch.hunks) == 2
+
+    # Check first file (2 chunks)
+    hunk1 = patch.hunks[0]
+    assert isinstance(hunk1, UpdateFile)
+    assert hunk1.path == Path("file1.py")
+
+    expected_diff1 = "@@ def a():\n-    pass\n+    return 1\n\n@@ def b():\n-    pass\n+    return 2\n"
+    assert hunk1.content == expected_diff1
+
+    # Check second file (1 chunk, no context)
+    hunk2 = patch.hunks[1]
+    assert isinstance(hunk2, UpdateFile)
+    assert hunk2.path == Path("file2.py")
+
+    expected_diff2 = "@@\n-old\n+new\n"
+    assert hunk2.content == expected_diff2

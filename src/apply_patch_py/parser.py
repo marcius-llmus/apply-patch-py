@@ -45,25 +45,8 @@ class PatchParser:
             return s[1:].lstrip()
         return s
 
-    def _maybe_strip_plus_from_hunk_header(self, line: str) -> str:
-        """Normalize a single leading '+' from a hunk header.
-
-        LLMs sometimes prefix hunk headers with '+' (or even '++') when they are
-        accidentally emitted as diff additions.
-
-        We only strip a single '+' when the remainder is an unambiguous hunk
-        header (Add/Delete/Update). We do not normalize arbitrary lines.
-        """
-
-        if not (s := line.strip()).startswith("+") or s.startswith("++"):
-            return s
-        candidate = s[1:].lstrip()
-        if self._is_hunk_header(candidate):
-            return candidate
-        return s
-
     def _maybe_strip_pluses_from_hunk_header(self, line: str) -> str:
-        """Like _maybe_strip_plus_from_hunk_header, but tolerate '++*** ...'."""
+        """It will allow lines with malformed '++*** ...'."""
 
         if not (s := line.strip()).startswith("+"):
             return s
@@ -218,6 +201,7 @@ class PatchParser:
                 remaining = remaining[1:]
 
             chunks: list = []
+            diff_lines: list = []
 
             while remaining:
                 if not remaining[0].strip():
@@ -244,6 +228,7 @@ class PatchParser:
                     line_number=line_number + consumed,
                     allow_missing_context=not chunks,
                 )
+                diff_lines.extend(remaining[:chunk_consumed])
                 chunks.append(chunk)
                 consumed += chunk_consumed
                 remaining = remaining[chunk_consumed:]
@@ -253,8 +238,15 @@ class PatchParser:
                     f"Invalid patch hunk on line {line_number}: Update file hunk for path '{path_str}' is empty"
                 )
 
+            diff_content = "\n".join(diff_lines) + "\n" if diff_lines else ""
+
             return (
-                UpdateFile(path=Path(path_str), move_to=move_to, chunks=chunks),
+                UpdateFile(
+                    path=Path(path_str),
+                    move_to=move_to,
+                    chunks=chunks,
+                    content=diff_content,
+                ),
                 consumed,
             )
 
