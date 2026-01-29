@@ -87,7 +87,8 @@ class PatchApplier:
 
     async def apply(self, patch_text: str, workdir: Path = Path(".")) -> AffectedPaths:
         try:
-            patch = PatchParser().parse(patch_text)
+            parser = PatchParser()
+            patch = parser.parse(patch_text)
         except ValueError as e:
             raise RuntimeError(str(e)) from e
 
