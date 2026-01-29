@@ -31,7 +31,7 @@ def calculate_score(
 
     from pathlib import Path
 
-    return PatchApplier._smart_fuzzy_score(
+    return PatchApplier()._smart_fuzzy_score(
         chunk_lines, pattern_lines, path=Path(filename)
     )
 

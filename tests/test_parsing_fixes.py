@@ -7,7 +7,7 @@ from apply_patch_py.models import AddFile, DeleteFile, UpdateFile
 
 
 def _parse(text: str):
-    return PatchParser.parse(text)
+    return PatchParser().parse(text)
 
 
 def _assert_is_add_file(hunk, path: str, *, contains: list[str] | None = None):

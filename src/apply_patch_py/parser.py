@@ -87,9 +87,8 @@ class PatchParser:
         stripped = self._strip_prefixed_marker(line)
         return stripped == self.END_PATCH
 
-    @classmethod
-    def parse(cls, text: str) -> Patch:
-        return cls()._parse(text)
+    def parse(self, text: str) -> Patch:
+        return self._parse(text)
 
     def _parse(self, text: str) -> Patch:
         lines = text.strip().splitlines()

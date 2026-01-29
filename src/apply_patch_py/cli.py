@@ -7,7 +7,8 @@ from .applier import PatchApplier
 
 async def run_apply_patch(patch_text: str) -> int:
     try:
-        affected = await PatchApplier.apply(patch_text, Path("."))
+        applier = PatchApplier()
+        affected = await applier.apply(patch_text, Path("."))
         print("Success. Updated the following files:")
         for path in affected.added:
             print(f"A {path}")

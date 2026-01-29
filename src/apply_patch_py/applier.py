@@ -56,9 +56,8 @@ class PatchApplier:
 
         return s.startswith(prefix)
 
-    @classmethod
     def _count_exact_code_line_matches(
-        cls,
+        self,
         *,
         chunk_lines: List[str],
         pattern_lines: List[str],
@@ -73,23 +72,22 @@ class PatchApplier:
         chunk_norm = {
             normalise(line)
             for line in chunk_lines
-            if not cls._is_comment_or_blank(line, path)
+            if not self._is_comment_or_blank(line, path)
         }
         if not chunk_norm:
             return 0
 
         matches = 0
         for line in pattern_lines:
-            if cls._is_comment_or_blank(line, path):
+            if self._is_comment_or_blank(line, path):
                 continue
             if normalise(line) in chunk_norm:
                 matches += 1
         return matches
 
-    @classmethod
-    async def apply(cls, patch_text: str, workdir: Path = Path(".")) -> AffectedPaths:
+    async def apply(self, patch_text: str, workdir: Path = Path(".")) -> AffectedPaths:
         try:
-            patch = PatchParser.parse(patch_text)
+            patch = PatchParser().parse(patch_text)
         except ValueError as e:
             raise RuntimeError(str(e)) from e
 
@@ -99,14 +97,13 @@ class PatchApplier:
         affected = AffectedPaths()
 
         for hunk in patch.hunks:
-            await cls._apply_hunk(hunk, workdir, affected)
+            await self._apply_hunk(hunk, workdir, affected)
 
         return affected
 
-    @classmethod
-    async def _apply_hunk(cls, hunk: Hunk, workdir: Path, affected: AffectedPaths):
+    async def _apply_hunk(self, hunk: Hunk, workdir: Path, affected: AffectedPaths):
         root = workdir.resolve()
-        path = cls._resolve_in_workdir(root, hunk.path)
+        path = self._resolve_in_workdir(root, hunk.path)
 
         if isinstance(hunk, AddFile):
             if path.parent != root:
@@ -137,14 +134,14 @@ class PatchApplier:
             if original_lines and original_lines[-1] == "":
                 original_lines.pop()
 
-            new_lines = cls._apply_chunks(original_lines, hunk.chunks, hunk.path)
+            new_lines = self._apply_chunks(original_lines, hunk.chunks, hunk.path)
 
             if not new_lines or new_lines[-1] != "":
                 new_lines.append("")
             new_content = "\n".join(new_lines)
 
             if hunk.move_to:
-                dest = cls._resolve_in_workdir(root, hunk.move_to)
+                dest = self._resolve_in_workdir(root, hunk.move_to)
                 if dest.parent != root:
                     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -162,9 +159,8 @@ class PatchApplier:
                     await f.write(new_content)
                 affected.modified.append(hunk.path)
 
-    @classmethod
     def _apply_chunks(
-        cls, original_lines: List[str], chunks: List[UpdateFileChunk], path: Path
+        self, original_lines: List[str], chunks: List[UpdateFileChunk], path: Path
     ) -> List[str]:
         current_lines = list(original_lines)
         line_index = 0
@@ -245,11 +241,11 @@ class PatchApplier:
 
             if found_idx is None:
                 # Fuzzy search
-                fuzzy_res = cls._fuzzy_find(
+                fuzzy_res = self._fuzzy_find(
                     current_lines, pattern, line_index, path=path
                 )
                 if fuzzy_res is None and line_index > 0:
-                    fuzzy_res = cls._fuzzy_find(current_lines, pattern, 0, path=path)
+                    fuzzy_res = self._fuzzy_find(current_lines, pattern, 0, path=path)
 
                 if fuzzy_res:
                     found_idx, match_len = fuzzy_res
@@ -265,9 +261,8 @@ class PatchApplier:
 
         return current_lines
 
-    @classmethod
     def _fuzzy_find(
-        cls,
+        self,
         current_lines: List[str],
         pattern: List[str],
         start_idx: int,
@@ -317,7 +312,7 @@ class PatchApplier:
                     # (ignoring comments/blanks). This prevents patching unrelated
                     # regions that are only superficially similar.
                     if (
-                        cls._count_exact_code_line_matches(
+                        self._count_exact_code_line_matches(
                             chunk_lines=chunk, pattern_lines=pattern, path=path
                         )
                         < 2
@@ -325,7 +320,7 @@ class PatchApplier:
                         continue
 
                     # Calculate refined score
-                    smart_score = cls._smart_fuzzy_score(chunk, pattern, path=path)
+                    smart_score = self._smart_fuzzy_score(chunk, pattern, path=path)
 
                     if smart_score > max_similarity:
                         max_similarity = smart_score
@@ -337,9 +332,8 @@ class PatchApplier:
 
         return None
 
-    @classmethod
     def _smart_fuzzy_score(
-        cls,
+        self,
         chunk_lines: List[str],
         pattern_lines: List[str],
         path: Path | None = None,
@@ -354,10 +348,10 @@ class PatchApplier:
         # Safety: if there are many code lines and none of them match exactly,
         # treat this as unsafe even if SequenceMatcher returns a high score.
         code_lines = [
-            line for line in pattern_lines if not cls._is_comment_or_blank(line, path)
+            line for line in pattern_lines if not self._is_comment_or_blank(line, path)
         ]
         if len(code_lines) >= 3:
-            exact_matches = cls._count_exact_code_line_matches(
+            exact_matches = self._count_exact_code_line_matches(
                 chunk_lines=chunk_lines, pattern_lines=pattern_lines, path=path
             )
             if exact_matches == 0:
@@ -380,7 +374,7 @@ class PatchApplier:
                     # Check if code or comment based on pattern
                     # Use pattern line to determine weight (what we are looking for)
                     line = pattern_norm[j1 + k]
-                    is_code = not cls._is_comment_or_blank(line, path)
+                    is_code = not self._is_comment_or_blank(line, path)
                     weight = 1.0 if is_code else 0.1
                     weighted_score += 1.0 * weight
                     total_weight += weight
@@ -399,7 +393,7 @@ class PatchApplier:
                     c_line = chunk_norm[i1 + k]
                     p_line = pattern_norm[j1 + k]
 
-                    is_code = not cls._is_comment_or_blank(p_line, path)
+                    is_code = not self._is_comment_or_blank(p_line, path)
                     weight = 1.0 if is_code else 0.1
                     total_weight += weight
 
