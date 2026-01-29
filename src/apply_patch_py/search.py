@@ -38,6 +38,24 @@ class ContentSearcher:
 
         return None
 
+    @classmethod
+    def count_occurrences(
+        cls, lines: List[str], pattern: List[str], start_idx: int
+    ) -> int:
+        if not pattern:
+            return 0
+
+        count = 0
+        # Scan the whole file starting from start_idx
+        for i in range(start_idx, len(lines) - len(pattern) + 1):
+            if (
+                cls._match_rstrip(lines, pattern, i)
+                or cls._match_trim(lines, pattern, i)
+                or cls._match_normalized(lines, pattern, i)
+            ):
+                count += 1
+        return count
+
     @staticmethod
     def _match_rstrip(lines: List[str], pattern: List[str], idx: int) -> bool:
         for p_idx, pat_line in enumerate(pattern):

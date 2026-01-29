@@ -149,6 +149,7 @@ class PatchApplier:
             )
 
         for chunk in chunks:
+            search_start_index = line_index
             if chunk.change_context:
                 found_idx = ContentSearcher.find_sequence(
                     current_lines,
@@ -164,6 +165,14 @@ class PatchApplier:
 
             if not chunk.old_lines:
                 if chunk.change_context:
+                    match_count = ContentSearcher.count_occurrences(
+                        current_lines, [chunk.change_context], search_start_index
+                    )
+                    if match_count > 1:
+                        raise RuntimeError(
+                            f"Ambiguous context: '{chunk.change_context}' matches {match_count} locations. "
+                            "Please provide more specific context or surrounding lines to uniquely identify the insertion point."
+                        )
                     insertion_idx = line_index
                 else:
                     insertion_idx = len(current_lines)

@@ -1,3 +1,5 @@
+import pytest
+
 from apply_patch_py import apply_patch
 
 
@@ -60,10 +62,10 @@ async def test_apply_patch_repeated_context(tmp_path):
     target = tmp_path / "repeated.py"
     target.write_text("""
 def foo():
-    pass
+    return 1
 
 def foo():
-    pass
+    return 1
 """.strip())
 
     # We want to insert into the first foo, then the second foo.
@@ -72,9 +74,11 @@ def foo():
     patch = """*** Begin Patch
 *** Update File: repeated.py
 @@ def foo():
-++    print("first")
+-    return 1
++    return 11
 @@ def foo():
-++    print("second")
+-    return 1
++    return 12
 *** End Patch"""
 
     await apply_patch(patch, workdir=tmp_path)
@@ -82,20 +86,18 @@ def foo():
 
     # The file should look like:
     # def foo():
-    #     print("first")
-    #     pass
+    #     return 11
     #
     # def foo():
-    #     print("second")
-    #     pass
+    #     return 12
 
     parts = content.split("def foo():")
     # parts[0] is empty (before first def)
     # parts[1] is body of first
     # parts[2] is body of second
 
-    assert 'print("first")' in parts[1]
-    assert 'print("second")' in parts[2]
+    assert "return 11" in parts[1]
+    assert "return 12" in parts[2]
 
 
 async def test_apply_patch_addition_no_context_appends(tmp_path):
@@ -170,3 +172,24 @@ def c():
     assert 'def a():\n    print("a")\n    return 1' in content
     assert "def b():\n    return 20" in content
     assert 'def c():\n    print("c")\n    return 3' in content
+
+
+async def test_apply_patch_ambiguous_context_raises_error(tmp_path):
+    """Test that we reject pure additions if the context matches multiple locations."""
+    target = tmp_path / "ambiguous.py"
+    target.write_text("""
+def foo():
+    pass
+
+def foo():
+    pass
+""".strip())
+
+    patch = """*** Begin Patch
+*** Update File: ambiguous.py
+@@ def foo():
+++    print("ambiguous")
+*** End Patch"""
+
+    with pytest.raises(RuntimeError, match="Ambiguous context"):
+        await apply_patch(patch, workdir=tmp_path)
