@@ -346,7 +346,9 @@ class PatchApplier:
 
         candidate_start_list = sorted(candidate_starts)
         if len(candidate_start_list) > self._FUZZY_MAX_CANDIDATE_STARTS:
-            candidate_start_list = candidate_start_list[: self._FUZZY_MAX_CANDIDATE_STARTS]
+            candidate_start_list = candidate_start_list[
+                : self._FUZZY_MAX_CANDIDATE_STARTS
+            ]
 
         deadline = time.monotonic() + self._FUZZY_MAX_SECONDS
         evaluations = 0
@@ -387,7 +389,10 @@ class PatchApplier:
                     best_start = i
                     best_len = length
 
-            if time.monotonic() > deadline or evaluations >= self._FUZZY_MAX_EVALUATIONS:
+            if (
+                time.monotonic() > deadline
+                or evaluations >= self._FUZZY_MAX_EVALUATIONS
+            ):
                 break
 
         if max_similarity >= smart_thresh:
