@@ -1,6 +1,7 @@
 import os
 import math
 import difflib
+import time
 import aiofiles
 from pathlib import Path
 from typing import List, Tuple
@@ -34,6 +35,10 @@ COMMENT_PREFIXES = {
 
 
 class PatchApplier:
+    _FUZZY_MAX_SECONDS = 1.0
+    _FUZZY_MAX_EVALUATIONS = 20_000
+    _FUZZY_MAX_CANDIDATE_STARTS = 2_000
+
     @staticmethod
     def _resolve_in_workdir(workdir: Path, path: Path) -> Path:
         if path.is_absolute():
@@ -278,11 +283,7 @@ class PatchApplier:
         if not pattern:
             return None
 
-        pattern_str = "\n".join(pattern)
-
-        # Coarse gating: only consider candidates that are somewhat similar.
         coarse_thresh = 0.6
-        # Refined threshold after applying safety gates.
         smart_thresh = 0.9
 
         max_similarity = 0.0
@@ -300,35 +301,94 @@ class PatchApplier:
 
         lines_len = len(current_lines)
 
+        pattern_norm = [normalise(line) for line in pattern]
+        pattern_code_norm = {
+            normalise(line)
+            for line in pattern
+            if not self._is_comment_or_blank(line, path)
+        }
+        if not pattern_code_norm:
+            return None
+
+        current_norm = [normalise(line) for line in current_lines]
+        positions: dict[str, list[int]] = {}
+        for idx, line in enumerate(current_norm):
+            positions.setdefault(line, []).append(idx)
+
+        anchor_candidates: list[tuple[int, int, str]] = []
+        for pat_idx, raw_line in enumerate(pattern):
+            if self._is_comment_or_blank(raw_line, path):
+                continue
+            key = normalise(raw_line)
+            freq = len(positions.get(key, []))
+            if freq:
+                anchor_candidates.append((freq, pat_idx, key))
+
+        anchor_candidates.sort(key=lambda x: x[0])
+        anchors = anchor_candidates[:3]
+
+        candidate_starts: set[int] = set()
+        for _, pat_idx, key in anchors:
+            for pos in positions.get(key, []):
+                base = pos - pat_idx
+                for offset in (-2, -1, 0, 1, 2):
+                    s = base + offset
+                    if s < start_idx:
+                        continue
+                    if s > lines_len:
+                        continue
+                    candidate_starts.add(s)
+
+        fallback_starts = range(
+            start_idx, min(lines_len, start_idx + self._FUZZY_MAX_CANDIDATE_STARTS)
+        )
+        candidate_starts.update(fallback_starts)
+
+        candidate_start_list = sorted(candidate_starts)
+        if len(candidate_start_list) > self._FUZZY_MAX_CANDIDATE_STARTS:
+            candidate_start_list = candidate_start_list[: self._FUZZY_MAX_CANDIDATE_STARTS]
+
+        deadline = time.monotonic() + self._FUZZY_MAX_SECONDS
+        evaluations = 0
+
         for length in range(min_len, max_len + 1):
             if length <= 0:
                 continue
 
-            for i in range(start_idx, lines_len - length + 1):
+            for i in candidate_start_list:
+                if time.monotonic() > deadline:
+                    break
+                if evaluations >= self._FUZZY_MAX_EVALUATIONS:
+                    break
+                if i + length > lines_len:
+                    continue
+
                 chunk = current_lines[i : i + length]
-                chunk_str = "\n".join(chunk)
+                chunk_code_norm = {
+                    normalise(line)
+                    for line in chunk
+                    if not self._is_comment_or_blank(line, path)
+                }
+                if len(chunk_code_norm.intersection(pattern_code_norm)) < 2:
+                    evaluations += 1
+                    continue
 
-                ratio = difflib.SequenceMatcher(None, chunk_str, pattern_str).ratio()
+                chunk_norm = current_norm[i : i + length]
+                ratio = difflib.SequenceMatcher(None, chunk_norm, pattern_norm).ratio()
+                evaluations += 1
 
-                if ratio > coarse_thresh:
-                    # Safety gate: require at least 2 exact code-line matches
-                    # (ignoring comments/blanks). This prevents patching unrelated
-                    # regions that are only superficially similar.
-                    if (
-                        self._count_exact_code_line_matches(
-                            chunk_lines=chunk, pattern_lines=pattern, path=path
-                        )
-                        < 2
-                    ):
-                        continue
+                if ratio <= coarse_thresh:
+                    continue
 
-                    # Calculate refined score
-                    smart_score = self._smart_fuzzy_score(chunk, pattern, path=path)
+                smart_score = self._smart_fuzzy_score(chunk, pattern, path=path)
 
-                    if smart_score > max_similarity:
-                        max_similarity = smart_score
-                        best_start = i
-                        best_len = length
+                if smart_score > max_similarity:
+                    max_similarity = smart_score
+                    best_start = i
+                    best_len = length
+
+            if time.monotonic() > deadline or evaluations >= self._FUZZY_MAX_EVALUATIONS:
+                break
 
         if max_similarity >= smart_thresh:
             return best_start, best_len
